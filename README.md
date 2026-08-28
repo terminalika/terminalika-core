@@ -12,7 +12,9 @@ repo for the CLI launcher.
 - `core.Registry` — thread-safe registry of game factories by name.
 - `games.Default()` — built-in games: `snake` and `tetris`.
 - `highscore` — persists each game's best score to
-  `~/.config/terminalika/scores.json`.
+  `scores.json` in the user config dir (`~/.config/terminalika/scores.json`
+  on Linux, `~/Library/Application Support/terminalika/scores.json` on macOS,
+  `%AppData%\terminalika\scores.json` on Windows).
 - `core.Event` / `core.Command` / `core.Bus` — the event system. Games publish
   domain events through an `Emitter` and may opt into external commands via
   the optional `core.Commandable` interface.
@@ -32,7 +34,8 @@ cd ..  # into the parent of both
 go work init ./terminalika ./terminalika-core
 ```
 
-The repos are private; configure Go to fetch them over SSH:
+The repos are public, so `go get` works out of the box. For local development
+over SSH, configure Go to fetch them directly and skip the public proxy:
 
 ```sh
 git config --global url."git@github.com:".insteadOf "https://github.com/"
