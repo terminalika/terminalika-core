@@ -75,10 +75,15 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	boardW := boardColumns * cellWidth
 	centerX := origin.leftX + boardW/2
 
+	pauseText := "PAUSED"
+	if g.pauseReason != "" {
+		pauseText = g.pauseReason
+	}
+
 	status := fmt.Sprintf("SCORE: %d  BEST: %d  LINES: %d", g.score, g.best, g.lines)
 	switch {
 	case g.paused:
-		status += " - PAUSED"
+		status += " - " + pauseText
 	case g.gameOver:
 		status += " - GAME OVER"
 	}
@@ -88,7 +93,7 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	emitStr(screen, centerX-len(hint)/2, origin.topY+boardRows+2, statusStyle, hint)
 
 	if g.paused {
-		overlay := "PAUSED"
+		overlay := pauseText
 		overlayStyle := tcell.StyleDefault.
 			Foreground(tcell.ColorWhite).
 			Background(tcell.ColorDarkRed)

@@ -67,10 +67,11 @@ type Game struct {
 	food    Point
 	hasFood bool
 
-	score    int
-	best     int
-	gameOver bool
-	paused   bool
+	score       int
+	best        int
+	gameOver    bool
+	paused      bool
+	pauseReason string
 
 	lastTick time.Time
 	period   time.Duration
@@ -109,6 +110,10 @@ type gameOverPayload struct {
 	Score  int    `json:"score"`
 	Best   int    `json:"best"`
 	Reason string `json:"reason"`
+}
+
+type pausedPayload struct {
+	Reason string `json:"reason,omitempty"`
 }
 
 type setDirectionPayload struct {
@@ -171,6 +176,7 @@ func (g *Game) Reset() {
 	g.best = g.store.Best(gameName)
 	g.gameOver = false
 	g.paused = false
+	g.pauseReason = ""
 	g.lastTick = time.Now()
 	g.period = tickPeriod(0)
 	g.spawnFood()
@@ -234,7 +240,7 @@ func (g *Game) Pause() {
 		return
 	}
 	g.paused = true
-	g.emit(evPaused, nil)
+	g.emit(evPaused, pausedPayload{Reason: g.pauseReason})
 }
 
 // Resume continues the game and resets the tick clock.
@@ -243,9 +249,13 @@ func (g *Game) Resume() {
 		return
 	}
 	g.paused = false
+	g.pauseReason = ""
 	g.lastTick = time.Now()
 	g.emit(evResumed, nil)
 }
+
+// IsPaused reports whether the snake is paused.
+func (g *Game) IsPaused() bool { return g.paused }
 
 // HandleCommand applies an externally triggered command.
 func (g *Game) HandleCommand(cmd core.Command) error {
@@ -270,6 +280,13 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 		g.step()
 		return nil
 	case cmdPause:
+		var p pausedPayload
+		if len(cmd.Payload) > 0 {
+			if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+				return fmt.Errorf("invalid payload: %w", err)
+			}
+		}
+		g.pauseReason = p.Reason
 		g.Pause()
 		return nil
 	case cmdResume:
@@ -294,7 +311,12 @@ func (g *Game) Commands() []core.CommandSpec {
 			"required": []string{"direction"},
 		})},
 		{Name: cmdStep, Description: "advance the snake one tick"},
-		{Name: cmdPause, Description: "pause the game"},
+		{Name: cmdPause, Description: "pause the game", Schema: core.MustJSON(map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"reason": map[string]any{"type": "string"},
+			},
+		})},
 		{Name: cmdResume, Description: "resume the game"},
 		{Name: cmdReset, Description: "reset the game"},
 	}

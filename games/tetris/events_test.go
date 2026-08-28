@@ -157,3 +157,28 @@ func TestLifecycleCommandsEmitEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestPauseCommandCarriesReason(t *testing.T) {
+	g, r := newEventGame()
+	r.events = nil
+
+	err := g.HandleCommand(core.Command{
+		Type:    cmdPause,
+		Payload: core.MustJSON(pausedPayload{Reason: "Paused by PI"}),
+	})
+	if err != nil {
+		t.Fatalf("HandleCommand: %v", err)
+	}
+
+	if len(r.events) != 1 || r.events[0].Type != evPaused {
+		t.Fatalf("events = %+v, want single %s", r.events, evPaused)
+	}
+
+	var p pausedPayload
+	if err := json.Unmarshal(r.events[0].Payload, &p); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if p.Reason != "Paused by PI" {
+		t.Fatalf("reason = %q, want %q", p.Reason, "Paused by PI")
+	}
+}

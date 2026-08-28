@@ -122,13 +122,14 @@ func (p *piece) cells() []Point {
 
 // Game holds the full Tetris state. It implements core.Game.
 type Game struct {
-	board    [boardRows][boardColumns]cell
-	current  *piece
-	gameOver bool
-	paused   bool
-	score    int
-	best     int
-	lines    int
+	board       [boardRows][boardColumns]cell
+	current     *piece
+	gameOver    bool
+	paused      bool
+	pauseReason string
+	score       int
+	best        int
+	lines       int
 
 	lastTick time.Time
 	period   time.Duration
@@ -168,6 +169,10 @@ type gameOverPayload struct {
 type movePayload struct {
 	DX int `json:"dx"`
 	DY int `json:"dy"`
+}
+
+type pausedPayload struct {
+	Reason string `json:"reason,omitempty"`
 }
 
 // SetEmitter sets the emitter used to publish domain events.
@@ -242,6 +247,7 @@ func (g *Game) Reset() {
 	g.current = nil
 	g.gameOver = false
 	g.paused = false
+	g.pauseReason = ""
 	g.score = 0
 	g.best = g.store.Best(gameName)
 	g.lines = 0
@@ -315,7 +321,7 @@ func (g *Game) Pause() {
 		return
 	}
 	g.paused = true
-	g.emit(evPaused, nil)
+	g.emit(evPaused, pausedPayload{Reason: g.pauseReason})
 }
 
 // Resume continues the game and resets the gravity clock.
@@ -324,9 +330,13 @@ func (g *Game) Resume() {
 		return
 	}
 	g.paused = false
+	g.pauseReason = ""
 	g.lastTick = time.Now()
 	g.emit(evResumed, nil)
 }
+
+// IsPaused reports whether the game is paused.
+func (g *Game) IsPaused() bool { return g.paused }
 
 // HandleCommand applies an externally triggered command.
 func (g *Game) HandleCommand(cmd core.Command) error {
@@ -369,6 +379,13 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 		}
 		return nil
 	case cmdPause:
+		var p pausedPayload
+		if len(cmd.Payload) > 0 {
+			if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+				return fmt.Errorf("invalid payload: %w", err)
+			}
+		}
+		g.pauseReason = p.Reason
 		g.Pause()
 		return nil
 	case cmdResume:
@@ -396,7 +413,12 @@ func (g *Game) Commands() []core.CommandSpec {
 		{Name: cmdRotate, Description: "rotate the active piece"},
 		{Name: cmdHardDrop, Description: "drop the active piece instantly"},
 		{Name: cmdTick, Description: "apply one gravity tick"},
-		{Name: cmdPause, Description: "pause the game"},
+		{Name: cmdPause, Description: "pause the game", Schema: core.MustJSON(map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"reason": map[string]any{"type": "string"},
+			},
+		})},
 		{Name: cmdResume, Description: "resume the game"},
 		{Name: cmdReset, Description: "reset the game"},
 	}
