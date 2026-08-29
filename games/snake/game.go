@@ -511,8 +511,8 @@ func tickPeriod(score int) time.Duration {
 	speedUps := (level - 1) / 10
 
 	period := 220*time.Millisecond - time.Duration(speedUps)*10*time.Millisecond
-	if period < 120*time.Millisecond {
-		return 120 * time.Millisecond
+	if period < 140*time.Millisecond {
+		return 140 * time.Millisecond
 	}
 	return period
 }

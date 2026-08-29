@@ -39,3 +39,19 @@ type Factory func() Game
 type PauseState interface {
 	IsPaused() bool
 }
+
+// KeyStateHandler is implemented by games that want to know when a key is
+// pressed and when it is released, so that holding a key can drive smooth,
+// continuous movement (a Pong paddle, a cannon) instead of one step per
+// keypress.
+//
+// The launcher calls HandleKeyState(ev, true) for every key press before it
+// falls back to HandleInput - a press that HandleKeyState consumes is not
+// forwarded to HandleInput - and HandleKeyState(ev, false) when the key is
+// released. Terminals that report key releases (the kitty keyboard protocol,
+// win32-input-mode) deliver real releases; elsewhere the launcher
+// synthesises a release shortly after the last press or auto-repeat of the
+// key, so games must treat repeated presses of a held key as harmless.
+type KeyStateHandler interface {
+	HandleKeyState(ev *tcell.EventKey, pressed bool) bool
+}
