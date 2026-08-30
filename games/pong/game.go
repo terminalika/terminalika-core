@@ -210,6 +210,7 @@ type Game struct {
 
 	rng     *rand.Rand
 	store   *highscore.Store
+	keys    core.GlobalKeys
 	emitter core.Emitter
 }
 
@@ -275,6 +276,12 @@ type movePayload struct {
 // SetEmitter sets the emitter used to publish domain events.
 func (g *Game) SetEmitter(e core.Emitter) {
 	g.emitter = e
+}
+
+// SetGlobalKeys tells the game what the launcher calls its pause, reset and
+// leave keys, for the hint line.
+func (g *Game) SetGlobalKeys(keys core.GlobalKeys) {
+	g.keys = keys
 }
 
 // emit publishes an event unless no emitter is configured.

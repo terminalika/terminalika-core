@@ -7,7 +7,8 @@ import "github.com/gdamore/tcell/v2"
 //
 // The launcher/engine owns the global keybindings (ESC, R and SPACE) and only
 // forwards the remaining keys to HandleInput. Games therefore must never claim
-// those three keys themselves.
+// those three keys themselves; they learn what to call them on screen through
+// GlobalKeysSetter.
 type Game interface {
 	// Init prepares the game. It is called once before the game loop starts.
 	Init(screen tcell.Screen) error

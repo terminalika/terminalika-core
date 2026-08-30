@@ -70,3 +70,20 @@ func TestNilStoreIsSafe(t *testing.T) {
 		t.Fatal("nil Submit must not report a new best")
 	}
 }
+
+func TestPersistent(t *testing.T) {
+	if NewInMemory().Persistent() {
+		t.Fatal("in-memory store should not be persistent")
+	}
+	var nilStore *Store
+	if nilStore.Persistent() {
+		t.Fatal("nil store should not be persistent")
+	}
+	s, err := Open(filepath.Join(t.TempDir(), "scores.json"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !s.Persistent() {
+		t.Fatal("file-backed store should be persistent")
+	}
+}

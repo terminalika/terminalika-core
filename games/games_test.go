@@ -1,9 +1,12 @@
 package games
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/gdamore/tcell/v2"
 	core "github.com/terminalika/terminalika-core"
+	"github.com/terminalika/terminalika-core/highscore"
 )
 
 func TestDefaultRegistryListsBuiltInGames(t *testing.T) {
@@ -39,4 +42,60 @@ func TestDefaultRegistryBuildsEveryGame(t *testing.T) {
 			t.Fatalf("%s does not implement core.EmitterSetter", name)
 		}
 	}
+}
+
+// On a screen of exactly NeededSize every game draws its status line on the
+// top row and its whole hint line, launcher key labels included, on the
+// bottom row: nothing hangs off the edge, and no row is wasted.
+func TestEveryGameFitsItsNeededSize(t *testing.T) {
+	keys := core.GlobalKeys{Pause: "Space", Reset: "R", Leave: "Esc/ctrl+]", LeaveAction: "return to menu"}
+	registry := WithStore(highscore.NewInMemory())
+	for _, name := range registry.Names() {
+		game, _ := registry.Get(name)
+		sized, ok := game.(core.Sized)
+		if !ok {
+			t.Fatalf("%s does not implement core.Sized", name)
+		}
+		core.SetGlobalKeys(game, keys)
+		size := sized.NeededSize()
+
+		screen := tcell.NewSimulationScreen("UTF-8")
+		if err := screen.Init(); err != nil {
+			t.Fatal(err)
+		}
+		screen.SetSize(size.Cols, size.Rows)
+		if err := game.Init(screen); err != nil {
+			t.Fatalf("%s Init: %v", name, err)
+		}
+		game.Draw(screen)
+		screen.Show()
+
+		rows := screenRows(screen)
+		if len(rows) != size.Rows {
+			t.Fatalf("%s: %d rows drawn, NeededSize says %d", name, len(rows), size.Rows)
+		}
+		if !strings.Contains(rows[len(rows)-1], keys.LeaveHint()) {
+			t.Fatalf("%s: bottom row %q should carry the whole hint", name, rows[len(rows)-1])
+		}
+		if name != "pong" && !strings.Contains(rows[0], "SCORE") { // pong's setup screen has no score yet
+			t.Fatalf("%s: top row %q should be the status line", name, rows[0])
+		}
+	}
+}
+
+func screenRows(screen tcell.SimulationScreen) []string {
+	cells, w, h := screen.GetContents()
+	rows := make([]string, h)
+	for y := 0; y < h; y++ {
+		var row strings.Builder
+		for x := 0; x < w; x++ {
+			if c := cells[y*w+x]; len(c.Runes) > 0 {
+				row.WriteRune(c.Runes[0])
+			} else {
+				row.WriteByte(' ')
+			}
+		}
+		rows[y] = row.String()
+	}
+	return rows
 }

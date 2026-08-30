@@ -2,6 +2,7 @@ package tetris
 
 import (
 	"fmt"
+	core "github.com/terminalika/terminalika-core"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -80,7 +81,11 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 		pauseText = g.pauseReason
 	}
 
-	status := fmt.Sprintf("SCORE: %d  BEST: %d  LINES: %d", g.score, g.best, g.lines)
+	status := fmt.Sprintf("SCORE: %d", g.score)
+	if g.store.Persistent() {
+		status += fmt.Sprintf("  BEST: %d", g.best)
+	}
+	status += fmt.Sprintf("  LINES: %d", g.lines)
 	switch {
 	case g.paused:
 		status += " - " + pauseText
@@ -89,7 +94,7 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	}
 	emitStr(screen, centerX-len(status)/2, origin.topY-2, statusStyle, status)
 
-	hint := "Arrows/WASD: move & rotate  X: drop  Space: pause  R: reset  Esc: menu"
+	hint := g.hint()
 	emitStr(screen, centerX-len(hint)/2, origin.topY+boardRows+2, statusStyle, hint)
 
 	if g.paused {
@@ -119,5 +124,20 @@ func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {
 	for _, r := range str {
 		screen.SetContent(x, y, r, nil, style)
 		x++
+	}
+}
+
+func (g *Game) hint() string {
+	return core.JoinHints("Arrows/WASD: move & rotate", "X: drop", g.keys.PauseHint(), g.keys.ResetHint("reset"), g.keys.LeaveHint())
+}
+
+// NeededSize is the board with the status line two rows above it and the
+// hint line two rows below (see drawStatus), as wide as the widest of them.
+func (g *Game) NeededSize() core.Size {
+	// The longest status drawStatus can produce, with room for the numbers.
+	status := "SCORE: 999999  BEST: 999999  LINES: 9999 - GAME OVER"
+	return core.Size{
+		Cols: core.Widest(boardColumns*cellWidth, status, g.hint()),
+		Rows: boardRows + 5,
 	}
 }

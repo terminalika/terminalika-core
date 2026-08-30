@@ -7,6 +7,7 @@ import (
 	"github.com/terminalika/terminalika-core/games/pong"
 	"github.com/terminalika/terminalika-core/games/snake"
 	"github.com/terminalika/terminalika-core/games/tetris"
+	"github.com/terminalika/terminalika-core/highscore"
 )
 
 var defaultRegistry = func() *core.Registry {
@@ -21,4 +22,17 @@ var defaultRegistry = func() *core.Registry {
 // Default returns the registry containing the built-in games.
 func Default() *core.Registry {
 	return defaultRegistry
+}
+
+// WithStore returns a registry of the built-in games that share the given
+// score store instead of the default scores file. Hosts without a filesystem
+// (the wasm builds) pass highscore.NewInMemory(); the games then leave the
+// best score off the screen.
+func WithStore(store *highscore.Store) *core.Registry {
+	r := core.NewRegistry()
+	r.Register("invaders", func() core.Game { return invaders.NewWithStore(store) })
+	r.Register("pong", func() core.Game { return pong.NewWithStore(store) })
+	r.Register("snake", func() core.Game { return snake.NewWithStore(store) })
+	r.Register("tetris", func() core.Game { return tetris.NewWithStore(store) })
+	return r
 }

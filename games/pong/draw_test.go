@@ -1,10 +1,13 @@
 package pong
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	core "github.com/terminalika/terminalika-core"
+	"github.com/terminalika/terminalika-core/highscore"
 )
 
 func newSimScreen(t *testing.T, w, h int) tcell.SimulationScreen {
@@ -59,7 +62,7 @@ func TestDrawSetupScreen(t *testing.T) {
 
 	g.Draw(screen)
 
-	for _, want := range []string{"PONG", "MODE", "NORMAL BOT", "FIRST TO", "5", "Enter: play", "BEST: 0"} {
+	for _, want := range []string{"PONG", "MODE", "NORMAL BOT", "FIRST TO", "5", "Enter: play"} {
 		if !screenContains(screen, want) {
 			t.Fatalf("setup screen should show %q", want)
 		}
@@ -156,7 +159,7 @@ func TestDrawOverlaysAndBotStatus(t *testing.T) {
 
 	g.Pause()
 	g.Draw(screen)
-	if !screenContains(screen, "PAUSED") || !screenContains(screen, "YOU 0 : 0 BOT  SCORE: 12  BEST: 0") {
+	if !screenContains(screen, "PAUSED") || !screenContains(screen, "YOU 0 : 0 BOT  SCORE: 12") {
 		t.Fatal("paused bot match should show PAUSED and the challenge score")
 	}
 	g.Resume()
@@ -198,5 +201,70 @@ func TestDigitGlyphsAreWellFormed(t *testing.T) {
 				t.Fatalf("glyph %q row %q is %d wide, want %d", r, line, len(line), digitWidth)
 			}
 		}
+	}
+}
+
+// The best score is only worth showing when it survives the session: a
+// file-backed store draws it, an in-memory one (the wasm hosts) does not.
+func TestDrawBestOnlyWithPersistentStore(t *testing.T) {
+	store, err := highscore.Open(filepath.Join(t.TempDir(), "scores.json"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	store.Submit(gameName, 7)
+
+	g := NewWithStore(store)
+	screen := newSimScreen(t, 80, 24)
+	if err := g.Init(screen); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	g.Draw(screen)
+	if !screenContains(screen, "BEST: 7") {
+		t.Fatal("setup screen with a persistent store should show BEST: 7")
+	}
+	startRally(g, modeHard, 3)
+	g.Draw(screen)
+	if !screenContains(screen, "SCORE: 0  BEST: 7") {
+		t.Fatal("bot match with a persistent store should show BEST after SCORE")
+	}
+
+	g = newTestGame()
+	screen = newSimScreen(t, 80, 24)
+	if err := g.Init(screen); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	g.Draw(screen)
+	if screenContains(screen, "BEST") {
+		t.Fatal("in-memory store should keep BEST off the screen")
+	}
+}
+
+// The launcher names the global keys; until it does, the hint line carries
+// only Pong's own keys.
+func TestDrawHintsFollowGlobalKeys(t *testing.T) {
+	g := newTestGame()
+	screen := newSimScreen(t, 80, 24)
+	if err := g.Init(screen); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	g.Draw(screen)
+	if !screenContains(screen, "Arrows/WASD: choose  Enter: play") || screenContains(screen, "Esc") {
+		t.Fatal("setup hint without global keys should end at Enter: play")
+	}
+
+	g.SetGlobalKeys(core.GlobalKeys{Pause: "Space", Reset: "R", Leave: "Esc", LeaveAction: "park"})
+	g.Draw(screen)
+	if !screenContains(screen, "Enter: play  Esc: park") {
+		t.Fatal("setup hint should name the launcher's leave key")
+	}
+	startRally(g, modeHard, 3)
+	g.Draw(screen)
+	if !screenContains(screen, "Space: pause  R: rematch  Esc: park") {
+		t.Fatal("bot match hint should name pause, reset and leave")
+	}
+	g.phase = phaseOver
+	g.Draw(screen)
+	if !screenContains(screen, "Enter/R: rematch  M: setup  Esc: park") {
+		t.Fatal("game-over hint should fold the reset key into rematch")
 	}
 }

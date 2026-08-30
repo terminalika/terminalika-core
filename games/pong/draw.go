@@ -2,6 +2,7 @@ package pong
 
 import (
 	"fmt"
+	core "github.com/terminalika/terminalika-core"
 	"strconv"
 	"strings"
 	"time"
@@ -214,9 +215,14 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	var status string
 	switch {
 	case g.phase == phaseSetup:
-		status = fmt.Sprintf("BEST: %d", g.best)
+		if g.store.Persistent() {
+			status = fmt.Sprintf("BEST: %d", g.best)
+		}
 	case g.mode.bot():
-		status = fmt.Sprintf("YOU %d : %d BOT  SCORE: %d  BEST: %d", g.points[0], g.points[1], g.score, g.best)
+		status = fmt.Sprintf("YOU %d : %d BOT  SCORE: %d", g.points[0], g.points[1], g.score)
+		if g.store.Persistent() {
+			status += fmt.Sprintf("  BEST: %d", g.best)
+		}
 	default:
 		status = fmt.Sprintf("P1 %d : %d P2", g.points[0], g.points[1])
 	}
@@ -228,17 +234,7 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	}
 	emitStr(screen, centerX-len(status)/2, origin.topY-2, statusStyle, status)
 
-	var hint string
-	switch {
-	case g.phase == phaseSetup:
-		hint = "Arrows/WASD: choose  Enter: play  Esc: menu"
-	case g.phase == phaseOver:
-		hint = "Enter/R: rematch  M: setup  Esc: menu"
-	case g.mode.bot():
-		hint = "W/S or Up/Down: move  Space: pause  R: rematch  Esc: menu"
-	default:
-		hint = "W/S: left  Up/Down: right  Space: pause  R: reset  Esc: menu"
-	}
+	hint := g.hint()
 	emitStr(screen, centerX-len(hint)/2, origin.topY+boardRows+1, statusStyle, hint)
 
 	overlayStyle := tcell.StyleDefault.
@@ -289,5 +285,52 @@ func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {
 	for _, r := range str {
 		screen.SetContent(x, y, r, nil, style)
 		x++
+	}
+}
+
+// hint is the hint line for the current phase and mode.
+func (g *Game) hint() string {
+	switch {
+	case g.phase == phaseSetup:
+		return g.hintSetup()
+	case g.phase == phaseOver:
+		return g.hintOver()
+	case g.mode.bot():
+		return g.hintBot()
+	default:
+		return g.hintTwoPlayer()
+	}
+}
+
+func (g *Game) hintSetup() string {
+	return core.JoinHints("Arrows/WASD: choose", "Enter: play", g.keys.LeaveHint())
+}
+
+func (g *Game) hintOver() string {
+	// Enter is the game's own rematch key; the launcher's reset does the same.
+	rematch := "Enter"
+	if g.keys.Reset != "" {
+		rematch += "/" + g.keys.Reset
+	}
+	return core.JoinHints(rematch+": rematch", "M: setup", g.keys.LeaveHint())
+}
+
+func (g *Game) hintBot() string {
+	return core.JoinHints("W/S or Up/Down: move", g.keys.PauseHint(), g.keys.ResetHint("rematch"), g.keys.LeaveHint())
+}
+
+func (g *Game) hintTwoPlayer() string {
+	return core.JoinHints("W/S: left", "Up/Down: right", g.keys.PauseHint(), g.keys.ResetHint("reset"), g.keys.LeaveHint())
+}
+
+// NeededSize is the court with the status line two rows above it and the
+// hint line one row below (see drawStatus), as wide as the widest line any
+// phase draws there.
+func (g *Game) NeededSize() core.Size {
+	// The longest status drawStatus can produce, with room for the numbers.
+	status := "YOU 99 : 99 BOT  SCORE: 99999  BEST: 99999 - GAME OVER"
+	return core.Size{
+		Cols: core.Widest(boardColumns*cellWidth, status, g.hintSetup(), g.hintOver(), g.hintBot(), g.hintTwoPlayer()),
+		Rows: boardRows + 4,
 	}
 }

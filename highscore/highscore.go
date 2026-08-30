@@ -48,6 +48,12 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
+// Persistent reports whether the store is backed by a file. A game hides its
+// best score on a store that is not: there is nothing to beat next time.
+func (s *Store) Persistent() bool {
+	return s != nil && s.path != ""
+}
+
 // Best returns the best score recorded for name.
 func (s *Store) Best(name string) int {
 	if s == nil {
