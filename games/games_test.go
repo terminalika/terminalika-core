@@ -10,7 +10,7 @@ import (
 )
 
 func TestDefaultRegistryListsBuiltInGames(t *testing.T) {
-	want := []string{"invaders", "pong", "snake", "tetris"}
+	want := []string{"dino", "invaders", "snake", "tetris"}
 
 	got := Default().Names()
 	if len(got) != len(want) {
@@ -77,7 +77,7 @@ func TestEveryGameFitsItsNeededSize(t *testing.T) {
 		if !strings.Contains(rows[len(rows)-1], keys.LeaveHint()) {
 			t.Fatalf("%s: bottom row %q should carry the whole hint", name, rows[len(rows)-1])
 		}
-		if name != "pong" && !strings.Contains(rows[0], "SCORE") { // pong's setup screen has no score yet
+		if !strings.Contains(rows[0], "SCORE") {
 			t.Fatalf("%s: top row %q should be the status line", name, rows[0])
 		}
 	}
@@ -131,10 +131,7 @@ func TestEveryGameReportsItsOverlayBand(t *testing.T) {
 		screen.Show()
 		area, up := reporter.OverlayArea()
 		if !game.(core.PauseState).IsPaused() {
-			if up {
-				t.Fatalf("%s: refused the pause but reports a band", name)
-			}
-			continue // pong before its first serve
+			t.Fatalf("%s: refused a pause on a fresh game", name)
 		}
 		if !up || area.H != 1 || area.W == 0 {
 			t.Fatalf("%s: paused but band = %+v, %v", name, area, up)

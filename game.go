@@ -45,8 +45,9 @@ type PauseState interface {
 
 // KeyStateHandler is implemented by games that want to know when a key is
 // pressed and when it is released, so that holding a key can drive smooth,
-// continuous movement (a Pong paddle, a cannon) instead of one step per
-// keypress.
+// continuous movement (a paddle, a cannon) instead of one step per
+// keypress. No built-in game implements it at the moment: they all play the
+// same on terminals without key releases.
 //
 // The launcher calls HandleKeyState(ev, true) for every key press before it
 // falls back to HandleInput - a press that HandleKeyState consumes is not
