@@ -85,7 +85,7 @@ func (g *Game) drawGround(screen tcell.Screen, origin boardOrigin) {
 }
 
 func (g *Game) drawObstacles(screen tcell.Screen, origin boardOrigin) {
-	cactus := tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorGreen)
+	cactus := tcell.StyleDefault.Background(tcell.ColorGreen).Foreground(tcell.ColorGreen)
 	bird := tcell.StyleDefault.Background(tcell.ColorBlack).Foreground(tcell.ColorWhite)
 	flap := (g.distance / 4) % 2
 
@@ -103,29 +103,15 @@ func (g *Game) drawObstacles(screen tcell.Screen, origin boardOrigin) {
 			}
 			continue
 		}
+		// Cacti are solid green cells, one per collision cell.
 		for _, c := range s.cells {
 			x := o.x + c.dx
 			if x < 0 || x >= boardColumns {
 				continue
 			}
-			r := 'ψ'
-			if c.dy > 0 || tallColumn(s, c.dx) {
-				r = 'Ψ'
-			}
-			screen.SetContent(origin.leftX+x, origin.topY+groundRow-1-c.dy, r, nil, cactus)
+			screen.SetContent(origin.leftX+x, origin.topY+groundRow-1-c.dy, ' ', nil, cactus)
 		}
 	}
-}
-
-// tallColumn reports whether a cactus shape has a cell above ground level
-// in the given column, so its base is drawn as a trunk rather than a sprout.
-func tallColumn(s shape, dx int) bool {
-	for _, c := range s.cells {
-		if c.dx == dx && c.dy > 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func (g *Game) drawDino(screen tcell.Screen, origin boardOrigin) {
