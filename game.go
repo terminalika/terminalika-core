@@ -8,7 +8,9 @@ import "github.com/gdamore/tcell/v2"
 // The launcher/engine owns the global keybindings (ESC, R and SPACE) and only
 // forwards the remaining keys to HandleInput. Games therefore must never claim
 // those three keys themselves; they learn what to call them on screen through
-// GlobalKeysSetter.
+// GlobalKeysSetter. A game that paints a band of its own over the board
+// (PAUSED, GAME OVER) says where through OverlayReporter, so the launcher's
+// notice can cover it instead of hunting for it in the screen buffer.
 type Game interface {
 	// Init prepares the game. It is called once before the game loop starts.
 	Init(screen tcell.Screen) error

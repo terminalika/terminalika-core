@@ -168,9 +168,12 @@ type Game struct {
 	bursts      []burst
 	popups      []popup
 
-	store   *highscore.Store
-	keys    core.GlobalKeys
-	emitter core.Emitter
+	store *highscore.Store
+	keys  core.GlobalKeys
+	// The PAUSED / GAME OVER band the last Draw painted, for OverlayArea.
+	overlay   core.Rect
+	overlayOn bool
+	emitter   core.Emitter
 }
 
 // Event payloads.
@@ -826,11 +829,13 @@ func (g *Game) formationBounds() (minX, maxX, maxY int) {
 // formation speeds up as it thins out, from the wave's base period towards
 // the last alien's fastest one.
 func alienPeriod(wave, alive int) time.Duration {
+	// Gentle on purpose: a two-minute break for someone waiting on an
+	// agent, not a challenge.
 	const (
 		firstBase = 650 * time.Millisecond // wave 1, full formation
-		slowest   = 280 * time.Millisecond // floor for a full formation on late waves
-		fastest   = 120 * time.Millisecond // the last alien standing
-		perWave   = 45 * time.Millisecond
+		slowest   = 450 * time.Millisecond // floor for a full formation on late waves
+		fastest   = 240 * time.Millisecond // the last alien standing
+		perWave   = 15 * time.Millisecond
 	)
 
 	base := firstBase - time.Duration(wave-1)*perWave
@@ -844,9 +849,9 @@ func alienPeriod(wave, alive int) time.Duration {
 
 // alienFirePeriod is how often the formation shoots; it tightens each wave.
 func alienFirePeriod(wave int) time.Duration {
-	period := 1300*time.Millisecond - time.Duration(wave-1)*100*time.Millisecond
-	if period < 400*time.Millisecond {
-		return 400 * time.Millisecond
+	period := 1300*time.Millisecond - time.Duration(wave-1)*33*time.Millisecond
+	if period < 700*time.Millisecond {
+		return 700 * time.Millisecond
 	}
 	return period
 }

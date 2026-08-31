@@ -17,6 +17,7 @@ type boardOrigin struct {
 // Draw renders the board, active piece and status bar.
 func (g *Game) Draw(screen tcell.Screen) {
 	screen.Clear()
+	g.overlayOn = false
 
 	w, h := screen.Size()
 	boardW := boardColumns * cellWidth
@@ -98,18 +99,25 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	emitStr(screen, centerX-len(hint)/2, origin.topY+boardRows+2, statusStyle, hint)
 
 	if g.paused {
-		overlay := pauseText
-		overlayStyle := tcell.StyleDefault.
-			Foreground(tcell.ColorWhite).
-			Background(tcell.ColorDarkRed)
-		emitStr(screen, centerX-len(overlay)/2, origin.topY+boardRows/2, overlayStyle, overlay)
+		g.band(screen, centerX-len(pauseText)/2, origin.topY+boardRows/2, pauseText)
 	} else if g.gameOver {
 		overlay := "GAME OVER"
-		overlayStyle := tcell.StyleDefault.
-			Foreground(tcell.ColorWhite).
-			Background(tcell.ColorDarkRed)
-		emitStr(screen, centerX-len(overlay)/2, origin.topY+boardRows/2, overlayStyle, overlay)
+		g.band(screen, centerX-len(overlay)/2, origin.topY+boardRows/2, overlay)
 	}
+}
+
+// band paints the game's own overlay - white on dark red, one row - and
+// remembers where, for OverlayArea.
+func (g *Game) band(screen tcell.Screen, x, y int, text string) {
+	style := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkRed)
+	emitStr(screen, x, y, style, text)
+	g.overlay = core.Rect{X: x, Y: y, W: len(text), H: 1}
+	g.overlayOn = true
+}
+
+// OverlayArea reports the PAUSED / GAME OVER band the last Draw painted.
+func (g *Game) OverlayArea() (core.Rect, bool) {
+	return g.overlay, g.overlayOn
 }
 
 func fillCell(screen tcell.Screen, origin boardOrigin, p Point, style tcell.Style) {

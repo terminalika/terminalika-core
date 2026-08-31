@@ -33,8 +33,9 @@ const (
 	serveDelay = time.Second
 
 	// minBallPeriod caps the rally speed-up: every paddle hit shaves the
-	// mode's accel off the ball period, down to this.
-	minBallPeriod = 60 * time.Millisecond
+	// mode's accel off the ball period, down to this. Gentle on purpose: a
+	// two-minute break for someone waiting on an agent, not a challenge.
+	minBallPeriod = 80 * time.Millisecond
 
 	// A held paddle key moves the paddle one row right away, waits
 	// paddleFirstDelay (so a tap is one row), then keeps it moving one row
@@ -143,16 +144,16 @@ type profile struct {
 }
 
 var profiles = map[mode]profile{
-	modeTwoPlayers: {period: 110 * time.Millisecond, accel: 2 * time.Millisecond},
+	modeTwoPlayers: {period: 110 * time.Millisecond, accel: 700 * time.Microsecond},
 	// easy: slow ball, reach ±6 rows from where it stands, drifts back to
 	// the middle slowly and misreads two shots in five.
-	modeEasy: {period: 130 * time.Millisecond, accel: 1 * time.Millisecond, reactAt: 17, moveEvery: 2, recenterEvery: 4, aimError: 2, missChance: 0.4, mult: 1},
+	modeEasy: {period: 130 * time.Millisecond, accel: 350 * time.Microsecond, reactAt: 17, moveEvery: 2, recenterEvery: 4, aimError: 2, missChance: 0.4, mult: 1},
 	// normal: reach ±7 rows, recentres a bit faster and misreads one shot in
 	// five.
-	modeNormal: {period: 110 * time.Millisecond, accel: 2 * time.Millisecond, reactAt: 15, moveEvery: 2, recenterEvery: 3, aimError: 2, missChance: 0.2, mult: 2},
+	modeNormal: {period: 110 * time.Millisecond, accel: 700 * time.Microsecond, reactAt: 15, moveEvery: 2, recenterEvery: 3, aimError: 2, missChance: 0.2, mult: 2},
 	// hard: fast ball, reach ±6 rows and misreads only one shot in ten - but
 	// it never recentres, so shots into the corner away from it get past.
-	modeHard: {period: 90 * time.Millisecond, accel: 2 * time.Millisecond, reactAt: 17, moveEvery: 2, aimError: 2, missChance: 0.1, mult: 3},
+	modeHard: {period: 90 * time.Millisecond, accel: 700 * time.Microsecond, reactAt: 17, moveEvery: 2, aimError: 2, missChance: 0.1, mult: 3},
 }
 
 // phase is where the game is in its flow: the setup screen, the breather
@@ -208,10 +209,13 @@ type Game struct {
 	paused      bool
 	pauseReason string
 
-	rng     *rand.Rand
-	store   *highscore.Store
-	keys    core.GlobalKeys
-	emitter core.Emitter
+	rng   *rand.Rand
+	store *highscore.Store
+	keys  core.GlobalKeys
+	// The PAUSED / winner band the last Draw painted, for OverlayArea.
+	overlay   core.Rect
+	overlayOn bool
+	emitter   core.Emitter
 }
 
 // Event payloads.

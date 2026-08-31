@@ -454,8 +454,8 @@ func TestAlienPeriodSpeedsUpAsFormationThins(t *testing.T) {
 	if !(full > half && half > last) {
 		t.Fatalf("periods full=%v half=%v last=%v, want strictly decreasing", full, half, last)
 	}
-	if last < 120*time.Millisecond {
-		t.Fatalf("last alien period = %v, want no faster than 120ms", last)
+	if last < 240*time.Millisecond {
+		t.Fatalf("last alien period = %v, want no faster than 240ms", last)
 	}
 	// Wave 1 with a full formation must be leisurely.
 	if full < 600*time.Millisecond {
@@ -473,12 +473,12 @@ func TestAlienPeriodSpeedsUpEachWave(t *testing.T) {
 	if w100, w200 := alienPeriod(100, total), alienPeriod(200, total); w100 != w200 {
 		t.Fatalf("wave 100/200 periods %v/%v, want the same floor", w100, w200)
 	}
-	if got := alienPeriod(100, total); got != 280*time.Millisecond {
-		t.Fatalf("late-wave full-formation period = %v, want 280ms floor", got)
+	if got := alienPeriod(100, total); got != 450*time.Millisecond {
+		t.Fatalf("late-wave full-formation period = %v, want 450ms floor", got)
 	}
 	// Even on the fastest wave the last alien never drops below the floor.
-	if got := alienPeriod(100, 1); got < 120*time.Millisecond {
-		t.Fatalf("last-alien period on a late wave = %v, want at least 120ms", got)
+	if got := alienPeriod(100, 1); got < 240*time.Millisecond {
+		t.Fatalf("last-alien period on a late wave = %v, want at least 240ms", got)
 	}
 }
 
@@ -486,8 +486,8 @@ func TestAlienFirePeriodTightensEachWave(t *testing.T) {
 	if w1, w2 := alienFirePeriod(1), alienFirePeriod(2); w2 >= w1 {
 		t.Fatalf("wave 2 fire period %v not faster than wave 1 %v", w2, w1)
 	}
-	if got := alienFirePeriod(100); got != 400*time.Millisecond {
-		t.Fatalf("wave 100 fire period = %v, want floor 400ms", got)
+	if got := alienFirePeriod(100); got != 700*time.Millisecond {
+		t.Fatalf("wave 100 fire period = %v, want floor 700ms", got)
 	}
 }
 

@@ -134,9 +134,12 @@ type Game struct {
 	lastTick time.Time
 	period   time.Duration
 
-	store   *highscore.Store
-	keys    core.GlobalKeys
-	emitter core.Emitter
+	store *highscore.Store
+	keys  core.GlobalKeys
+	// The PAUSED / GAME OVER band the last Draw painted, for OverlayArea.
+	overlay   core.Rect
+	overlayOn bool
+	emitter   core.Emitter
 }
 
 // Event payloads.
@@ -594,23 +597,13 @@ func (g *Game) spawn() {
 	g.emit(evPieceSpawned, pieceSpawned{Kind: kindName(kind)})
 }
 
+// dropPeriod is the gravity interval: it tightens a little every ten lines,
+// gently - this is a two-minute break for someone waiting on an agent, not
+// a challenge - and never past the floor.
 func dropPeriod(lines int) time.Duration {
-	switch {
-	case lines < 10:
-		return 500 * time.Millisecond
-	case lines < 20:
-		return 450 * time.Millisecond
-	case lines < 30:
-		return 400 * time.Millisecond
-	case lines < 40:
+	period := 500*time.Millisecond - time.Duration(lines/10)*17*time.Millisecond
+	if period < 350*time.Millisecond {
 		return 350 * time.Millisecond
-	case lines < 50:
-		return 300 * time.Millisecond
-	case lines < 60:
-		return 250 * time.Millisecond
-	case lines < 70:
-		return 200 * time.Millisecond
-	default:
-		return 150 * time.Millisecond
 	}
+	return period
 }

@@ -99,3 +99,56 @@ func screenRows(screen tcell.SimulationScreen) []string {
 	}
 	return rows
 }
+
+// Every game says exactly where its PAUSED band is: nothing when it is not
+// up, and when it is, the reported cells - and only those - carry its dark
+// red background. Launchers cover it from this, never from the buffer.
+func TestEveryGameReportsItsOverlayBand(t *testing.T) {
+	registry := WithStore(highscore.NewInMemory())
+	for _, name := range registry.Names() {
+		game, _ := registry.Get(name)
+		reporter, ok := game.(core.OverlayReporter)
+		if !ok {
+			t.Fatalf("%s does not implement core.OverlayReporter", name)
+		}
+		size := game.(core.Sized).NeededSize()
+		screen := tcell.NewSimulationScreen("UTF-8")
+		if err := screen.Init(); err != nil {
+			t.Fatal(err)
+		}
+		screen.SetSize(size.Cols, size.Rows)
+		if err := game.Init(screen); err != nil {
+			t.Fatalf("%s Init: %v", name, err)
+		}
+
+		game.Draw(screen)
+		if _, up := reporter.OverlayArea(); up {
+			t.Fatalf("%s: reports a band before anything is up", name)
+		}
+
+		game.Pause()
+		game.Draw(screen)
+		screen.Show()
+		area, up := reporter.OverlayArea()
+		if !game.(core.PauseState).IsPaused() {
+			if up {
+				t.Fatalf("%s: refused the pause but reports a band", name)
+			}
+			continue // pong before its first serve
+		}
+		if !up || area.H != 1 || area.W == 0 {
+			t.Fatalf("%s: paused but band = %+v, %v", name, area, up)
+		}
+		for x := area.X - 1; x <= area.X+area.W; x++ {
+			_, _, style, _ := screen.GetContent(x, area.Y)
+			_, bg, _ := style.Decompose()
+			inside := x >= area.X && x < area.X+area.W
+			if inside && bg != tcell.ColorDarkRed {
+				t.Fatalf("%s: cell (%d,%d) inside the reported band is not the band", name, x, area.Y)
+			}
+			if !inside && bg == tcell.ColorDarkRed {
+				t.Fatalf("%s: cell (%d,%d) outside the reported band is still the band", name, x, area.Y)
+			}
+		}
+	}
+}

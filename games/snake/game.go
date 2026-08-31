@@ -76,9 +76,12 @@ type Game struct {
 	lastTick time.Time
 	period   time.Duration
 
-	store   *highscore.Store
-	keys    core.GlobalKeys
-	emitter core.Emitter
+	store *highscore.Store
+	keys  core.GlobalKeys
+	// The PAUSED / GAME OVER band the last Draw painted, for OverlayArea.
+	overlay   core.Rect
+	overlayOn bool
+	emitter   core.Emitter
 }
 
 // Event payloads.
@@ -513,13 +516,14 @@ func parseDirection(s string) (direction, error) {
 
 func tickPeriod(score int) time.Duration {
 	// One level is one eaten food (scorePerFood points). Speed increases
-	// every 10 levels instead of on every level.
+	// every 10 levels instead of on every level, and gently: this is a
+	// two-minute break for someone waiting on an agent, not a challenge.
 	level := score / scorePerFood
 	speedUps := (level - 1) / 10
 
-	period := 220*time.Millisecond - time.Duration(speedUps)*10*time.Millisecond
-	if period < 140*time.Millisecond {
-		return 140 * time.Millisecond
+	period := 220*time.Millisecond - time.Duration(speedUps)*3*time.Millisecond
+	if period < 180*time.Millisecond {
+		return 180 * time.Millisecond
 	}
 	return period
 }
