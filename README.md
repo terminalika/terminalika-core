@@ -28,19 +28,13 @@ To develop this library together with the launcher, clone both repos side by
 side and use a Go workspace (see the launcher's README):
 
 ```sh
-git clone git@github.com:terminalika/terminalika-core.git
-git clone git@github.com:terminalika/terminalika.git
+git clone https://github.com/terminalika/terminalika-core.git
+git clone https://github.com/terminalika/terminalika.git
 cd ..  # into the parent of both
 go work init ./terminalika ./terminalika-core
 ```
 
-The repos are public, so `go get` works out of the box. For local development
-over SSH, configure Go to fetch them directly and skip the public proxy:
-
-```sh
-git config --global url."git@github.com:".insteadOf "https://github.com/"
-go env -w GOPRIVATE=github.com/terminalika/*
-```
+The repos are public, so `go get` works out of the box.
 
 ## Test
 
