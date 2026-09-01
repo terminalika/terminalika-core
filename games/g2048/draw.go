@@ -23,10 +23,9 @@ type boardOrigin struct {
 	topY  int
 }
 
-// boardStyle is the slight warm tint under the whole board - the original
-// game's board colour, darkened - so the empty cells read as part of the
-// board rather than as holes in it.
-var boardStyle = tcell.StyleDefault.Background(tcell.NewRGBColor(0x4a, 0x44, 0x3d))
+// boardStyle is the slight tint under the whole board, so the empty cells
+// read as part of the board rather than as holes in it.
+var boardStyle = tcell.StyleDefault.Background(core.BoardTint)
 
 // tileStyles is the original game's palette, one entry per power of two; a
 // tile past the table gets beyondStyle. Empty cells are not in it: they
@@ -64,14 +63,16 @@ func (g *Game) Draw(screen tcell.Screen) {
 		return // terminal too small to draw
 	}
 
+	// The whole block is centred: status line, blank, board, hint lines.
+	hintLines := core.HintLines(w, g.hints()...)
 	origin := boardOrigin{
 		leftX: (w - boardW) / 2,
-		topY:  (h - boardH) / 2,
+		topY:  (h-(boardH+3+len(hintLines)))/2 + 2,
 	}
 
 	g.drawBoard(screen, origin)
 	g.drawTiles(screen, origin)
-	g.drawStatus(screen, origin)
+	g.drawStatus(screen, origin, hintLines)
 
 	screen.Show()
 }
@@ -136,7 +137,7 @@ func (g *Game) drawTile(screen tcell.Screen, origin boardOrigin, v int, x, y flo
 	emitStr(screen, left+(tileW-len(label))/2, top+tileH/2, style, label)
 }
 
-func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
+func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, hintLines []string) {
 	statusStyle := tcell.StyleDefault.
 		Foreground(tcell.ColorWhite).
 		Background(tcell.ColorBlack)
@@ -162,8 +163,9 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	}
 	emitStr(screen, centerX-len(status)/2, origin.topY-2, statusStyle, status)
 
-	hint := g.hint()
-	emitStr(screen, centerX-len(hint)/2, origin.topY+boardH+1, statusStyle, hint)
+	for i, line := range hintLines {
+		emitStr(screen, centerX-len(line)/2, origin.topY+boardH+1+i, statusStyle, line)
+	}
 
 	if g.paused {
 		g.band(screen, centerX-len(pauseText)/2, origin.topY+boardH/2, pauseText)
@@ -194,16 +196,16 @@ func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {
 	}
 }
 
-func (g *Game) hint() string {
-	return core.JoinHints("Arrows/WASD/HJKL: slide", g.keys.PauseHint(), g.keys.ResetHint("new game"), g.keys.LeaveHint())
+func (g *Game) hints() []string {
+	return []string{"Arrows/WASD/HJKL: slide", g.keys.PauseHint(), g.keys.ResetHint("new game"), g.keys.SwitchHint(), g.keys.LeaveHint()}
 }
 
 // NeededSize is the board with the status line two rows above it and the
-// hint line one row below (see drawStatus), as wide as the widest of them.
-func (g *Game) NeededSize() core.Size {
+// hint one row below (see drawStatus), as wide as the widest of them - or,
+// when avail is narrower than the one-line hint, the hint wrapped onto more
+// rows (core.HintLayout).
+func (g *Game) NeededSize(avail core.Size) core.Size {
 	status := "SCORE: 999999  BEST: 999999 - GAME OVER"
-	return core.Size{
-		Cols: core.Widest(boardW, status, g.hint()),
-		Rows: boardH + 4,
-	}
+	cols, hintRows := core.HintLayout(avail.Cols, core.Widest(boardW, status), g.hints()...)
+	return core.Size{Cols: cols, Rows: boardH + 3 + hintRows}
 }

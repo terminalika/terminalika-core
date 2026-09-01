@@ -372,15 +372,17 @@ func TestGameOpensOnThePickerAndEnterStartsTheHighlightedLevel(t *testing.T) {
 	}
 }
 
+var wide = core.Size{Cols: 200, Rows: 100}
+
 func TestNeededSizeFitsEveryLevel(t *testing.T) {
 	g := NewWithStore(highscore.NewInMemory())
-	size := g.NeededSize()
+	size := g.NeededSize(wide)
 	if size.Cols < 60 || size.Rows != 20 {
 		t.Fatalf("NeededSize = %+v, want at least 60 wide and 20 tall for the expert field", size)
 	}
 	g.start(Levels[0])
-	if g.NeededSize() != size {
-		t.Fatalf("NeededSize changed to %+v after starting; the launcher only asks once", g.NeededSize())
+	if g.NeededSize(wide) != size {
+		t.Fatalf("NeededSize changed to %+v after starting; the launcher only asks once", g.NeededSize(wide))
 	}
 }
 

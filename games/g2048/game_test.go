@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	core "github.com/terminalika/terminalika-core"
 	"github.com/terminalika/terminalika-core/highscore"
 )
 
@@ -151,7 +152,8 @@ func TestDrawMidSlideShowsTilesOnTheWay(t *testing.T) {
 	if err := screen.Init(); err != nil {
 		t.Fatal(err)
 	}
-	screen.SetSize(g.NeededSize().Cols, g.NeededSize().Rows)
+	size := g.NeededSize(core.Size{Cols: 200, Rows: 100})
+	screen.SetSize(size.Cols, size.Rows)
 
 	// Half-way: the 2 is on its way and the spawned tile is not on screen
 	// yet, so exactly one tile's worth of cells is painted.

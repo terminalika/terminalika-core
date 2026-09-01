@@ -57,7 +57,7 @@ func TestEveryGameFitsItsNeededSize(t *testing.T) {
 			t.Fatalf("%s does not implement core.Sized", name)
 		}
 		core.SetGlobalKeys(game, keys)
-		size := sized.NeededSize()
+		size := sized.NeededSize(core.Size{Cols: 200, Rows: 100})
 
 		screen := tcell.NewSimulationScreen("UTF-8")
 		if err := screen.Init(); err != nil {
@@ -79,6 +79,56 @@ func TestEveryGameFitsItsNeededSize(t *testing.T) {
 		}
 		if !strings.Contains(rows[0], "SCORE") {
 			t.Fatalf("%s: top row %q should be the status line", name, rows[0])
+		}
+	}
+}
+
+// Given less width than its one-line hint, every game wraps the hint onto
+// more rows - whole hints at a time, in order - and asks for exactly those
+// rows: the board and status still fit, the last hint ends the last row, and
+// no hint is cut.
+func TestEveryGameWrapsItsHintWhenNarrow(t *testing.T) {
+	keys := core.GlobalKeys{Pause: "Space", Reset: "R", Leave: "Esc/alt+g", LeaveAction: "return to menu", Switch: "alt+s"}
+	registry := WithStore(highscore.NewInMemory())
+	for _, name := range registry.Names() {
+		game, _ := registry.Get(name)
+		sized := game.(core.Sized)
+		core.SetGlobalKeys(game, keys)
+		oneLine := sized.NeededSize(core.Size{Cols: 200, Rows: 100})
+		// Narrow enough to force a wrap, wide enough for the board and status.
+		avail := core.Size{Cols: oneLine.Cols - 10, Rows: 100}
+		size := sized.NeededSize(avail)
+		if size.Cols != avail.Cols {
+			t.Fatalf("%s: asked for %d cols, want the %d available", name, size.Cols, avail.Cols)
+		}
+		if size.Rows <= oneLine.Rows {
+			t.Fatalf("%s: %d rows when narrow, want more than the one-line %d", name, size.Rows, oneLine.Rows)
+		}
+
+		screen := tcell.NewSimulationScreen("UTF-8")
+		if err := screen.Init(); err != nil {
+			t.Fatal(err)
+		}
+		screen.SetSize(size.Cols, size.Rows)
+		if err := game.Init(screen); err != nil {
+			t.Fatalf("%s Init: %v", name, err)
+		}
+		game.Draw(screen)
+		screen.Show()
+
+		rows := screenRows(screen)
+		if !strings.Contains(rows[0], "SCORE") {
+			t.Fatalf("%s: top row %q should be the status line", name, rows[0])
+		}
+		if !strings.Contains(rows[len(rows)-1], keys.LeaveHint()) {
+			t.Fatalf("%s: bottom row %q should end the hints", name, rows[len(rows)-1])
+		}
+		extra := size.Rows - oneLine.Rows
+		tail := strings.Join(rows[len(rows)-1-extra:], "  ")
+		for _, h := range []string{keys.PauseHint(), keys.SwitchHint(), keys.LeaveHint()} {
+			if !strings.Contains(tail, h) {
+				t.Fatalf("%s: hint %q missing or split across the wrapped rows %q", name, h, rows[len(rows)-1-extra:])
+			}
 		}
 	}
 }
@@ -111,7 +161,7 @@ func TestEveryGameReportsItsOverlayBand(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s does not implement core.OverlayReporter", name)
 		}
-		size := game.(core.Sized).NeededSize()
+		size := game.(core.Sized).NeededSize(core.Size{Cols: 200, Rows: 100})
 		screen := tcell.NewSimulationScreen("UTF-8")
 		if err := screen.Init(); err != nil {
 			t.Fatal(err)

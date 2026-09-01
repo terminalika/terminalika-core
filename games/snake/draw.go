@@ -25,15 +25,17 @@ func (g *Game) Draw(screen tcell.Screen) {
 		return // terminal too small to draw
 	}
 
+	// The whole block is centred: status line, blank, board, hint lines.
+	hintLines := core.HintLines(w, g.hints()...)
 	origin := boardOrigin{
 		leftX: (w - boardW) / 2,
-		topY:  (h - boardRows) / 2,
+		topY:  (h-(boardRows+3+len(hintLines)))/2 + 2,
 	}
 
 	g.drawBoard(screen, origin)
 	g.drawFood(screen, origin)
 	g.drawSnake(screen, origin)
-	g.drawStatus(screen, origin)
+	g.drawStatus(screen, origin, hintLines)
 
 	screen.Show()
 }
@@ -71,7 +73,7 @@ func (g *Game) drawFood(screen tcell.Screen, origin boardOrigin) {
 	fillCell(screen, origin, g.food, style)
 }
 
-func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
+func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, hintLines []string) {
 	statusStyle := tcell.StyleDefault.
 		Foreground(tcell.ColorWhite).
 		Background(tcell.ColorBlack)
@@ -96,8 +98,9 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	}
 	emitStr(screen, centerX-len(status)/2, origin.topY-2, statusStyle, status)
 
-	hint := g.hint()
-	emitStr(screen, centerX-len(hint)/2, origin.topY+boardRows+1, statusStyle, hint)
+	for i, line := range hintLines {
+		emitStr(screen, centerX-len(line)/2, origin.topY+boardRows+1+i, statusStyle, line)
+	}
 
 	if g.paused {
 		g.band(screen, centerX-len(pauseText)/2, origin.topY+boardRows/2, pauseText)
@@ -136,17 +139,17 @@ func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {
 	}
 }
 
-func (g *Game) hint() string {
-	return core.JoinHints("Arrows/WASD: move", g.keys.PauseHint(), g.keys.ResetHint("reset"), g.keys.LeaveHint())
+func (g *Game) hints() []string {
+	return []string{"Arrows/WASD: move", g.keys.PauseHint(), g.keys.ResetHint("reset"), g.keys.SwitchHint(), g.keys.LeaveHint()}
 }
 
 // NeededSize is the board with the status line two rows above it and the
-// hint line one row below (see drawStatus), as wide as the widest of them.
-func (g *Game) NeededSize() core.Size {
+// hint one row below (see drawStatus), as wide as the widest of them - or,
+// when avail is narrower than the one-line hint, the hint wrapped onto more
+// rows (core.HintLayout).
+func (g *Game) NeededSize(avail core.Size) core.Size {
 	// The longest status drawStatus can produce, with room for the numbers.
 	status := "SCORE: 99999  BEST: 99999 - GAME OVER"
-	return core.Size{
-		Cols: core.Widest(boardColumns*cellWidth, status, g.hint()),
-		Rows: boardRows + 4,
-	}
+	cols, hintRows := core.HintLayout(avail.Cols, core.Widest(boardColumns*cellWidth, status), g.hints()...)
+	return core.Size{Cols: cols, Rows: boardRows + 3 + hintRows}
 }

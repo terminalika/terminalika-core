@@ -17,10 +17,13 @@ type boardOrigin struct {
 }
 
 var (
-	hiddenStyle   = tcell.StyleDefault.Background(tcell.ColorDarkSlateGray).Foreground(tcell.ColorDarkSlateGray)
-	flagStyle     = tcell.StyleDefault.Background(tcell.ColorDarkSlateGray).Foreground(tcell.ColorRed)
-	wrongStyle    = tcell.StyleDefault.Foreground(tcell.ColorRed)
-	mineStyle     = tcell.StyleDefault.Foreground(tcell.ColorWhite)
+	hiddenStyle = tcell.StyleDefault.Background(tcell.ColorDarkSlateGray).Foreground(tcell.ColorDarkSlateGray)
+	flagStyle   = tcell.StyleDefault.Background(tcell.ColorDarkSlateGray).Foreground(tcell.ColorRed)
+	// Revealed cells sit on the same slight tint as 2048's board, so the
+	// opened part of the field reads as one surface.
+	openStyle     = tcell.StyleDefault.Background(core.BoardTint)
+	wrongStyle    = openStyle.Foreground(tcell.ColorRed)
+	mineStyle     = openStyle.Foreground(tcell.ColorWhite)
 	explodedStyle = tcell.StyleDefault.Background(tcell.ColorRed).Foreground(tcell.ColorWhite)
 	cursorHidden  = tcell.StyleDefault.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack)
 	cursorOpen    = tcell.StyleDefault.Background(tcell.ColorOlive).Foreground(tcell.ColorBlack)
@@ -62,9 +65,11 @@ func (g *Game) Draw(screen tcell.Screen) {
 		frameH = areaH
 	}
 
+	// The whole block is centred: status line, blank, frame, hint lines.
+	hintLines := core.HintLines(w, g.hints()...)
 	frame := boardOrigin{
 		leftX: (w - frameW) / 2,
-		topY:  (h - frameH) / 2,
+		topY:  (h-(frameH+3+len(hintLines)))/2 + 2,
 	}
 	area := boardOrigin{
 		leftX: frame.leftX + (frameW-areaW)/2,
@@ -76,7 +81,7 @@ func (g *Game) Draw(screen tcell.Screen) {
 	} else {
 		g.drawField(screen, area, time.Now())
 	}
-	g.drawStatus(screen, frame, frameW, frameH)
+	g.drawStatus(screen, frame, frameW, frameH, hintLines)
 
 	screen.Show()
 }
@@ -113,9 +118,9 @@ func (g *Game) drawField(screen tcell.Screen, origin boardOrigin, now time.Time)
 			case c.revealed && shown && c.flagged: // a wrong flag, shown by a hit
 				text, style = "X ", wrongStyle
 			case c.revealed && shown && c.adjacent > 0:
-				text, style = fmt.Sprintf("%d ", c.adjacent), tcell.StyleDefault.Foreground(numberColors[c.adjacent])
+				text, style = fmt.Sprintf("%d ", c.adjacent), openStyle.Foreground(numberColors[c.adjacent])
 			case c.revealed && shown:
-				text, style = "  ", tcell.StyleDefault
+				text, style = "  ", openStyle
 			case c.flagged && shown:
 				text, style = "▲ ", flagStyle
 			}
@@ -131,7 +136,7 @@ func (g *Game) drawField(screen tcell.Screen, origin boardOrigin, now time.Time)
 	}
 }
 
-func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, areaW, areaH int) {
+func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, areaW, areaH int, hintLines []string) {
 	statusStyle := tcell.StyleDefault.
 		Foreground(tcell.ColorWhite).
 		Background(tcell.ColorBlack)
@@ -160,8 +165,9 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, areaW, areaH 
 	}
 	emitStr(screen, centerX-len(status)/2, origin.topY-2, statusStyle, status)
 
-	hint := g.hint()
-	emitStr(screen, centerX-len([]rune(hint))/2, origin.topY+areaH+1, statusStyle, hint)
+	for i, line := range hintLines {
+		emitStr(screen, centerX-len([]rune(line))/2, origin.topY+areaH+1+i, statusStyle, line)
+	}
 
 	if g.paused {
 		g.band(screen, centerX-len(pauseText)/2, origin.topY+areaH/2, pauseText)
@@ -234,22 +240,35 @@ func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {
 	}
 }
 
-func (g *Game) hint() string {
+func (g *Game) hints() []string {
 	if g.choosing {
-		return core.JoinHints("Up/Down: choose", "Enter: start", g.keys.PauseHint(), g.keys.LeaveHint())
+		return g.pickerHints()
 	}
-	return core.JoinHints("Enter: open", "F: flag", g.keys.PauseHint(), g.keys.ResetHint("levels"), g.keys.LeaveHint())
+	return g.fieldHints()
+}
+
+func (g *Game) pickerHints() []string {
+	return []string{"Up/Down: choose", "Enter: start", g.keys.PauseHint(), g.keys.SwitchHint(), g.keys.LeaveHint()}
+}
+
+func (g *Game) fieldHints() []string {
+	return []string{"Enter: open", "F: flag", g.keys.PauseHint(), g.keys.ResetHint("levels"), g.keys.SwitchHint(), g.keys.LeaveHint()}
 }
 
 // NeededSize is the largest field - the level is picked after the size is
-// asked for - with the status line two rows above it and the hint line one
-// row below (see drawStatus), as wide as the widest of them.
-func (g *Game) NeededSize() core.Size {
-	cols, rows := frameSize()
+// asked for - with the status line two rows above it and the hint one row
+// below (see drawStatus), as wide as the widest of them; when avail is
+// narrower than the one-line hint, the hint wraps onto more rows instead
+// (core.HintLayout). Both the picker's and the field's hints must fit, so
+// the size is the larger of the two layouts.
+func (g *Game) NeededSize(avail core.Size) core.Size {
+	frameW, frameH := frameSize()
 	status := "INTERMEDIATE  SCORE: 99999  BEST: 99999  FLAGS: 99/99  TIME: 99:59 - GAME OVER"
-	fieldHint := core.JoinHints("Enter: open", "F: flag", g.keys.PauseHint(), g.keys.ResetHint("levels"), g.keys.LeaveHint())
+	frameW = core.Widest(frameW, status)
+	pickerCols, pickerRows := core.HintLayout(avail.Cols, frameW, g.pickerHints()...)
+	fieldCols, fieldRows := core.HintLayout(avail.Cols, frameW, g.fieldHints()...)
 	return core.Size{
-		Cols: core.Widest(cols, status, g.hint(), fieldHint),
-		Rows: rows + 4,
+		Cols: max(pickerCols, fieldCols),
+		Rows: frameH + 3 + max(pickerRows, fieldRows),
 	}
 }
