@@ -8,14 +8,13 @@ import (
 	core "github.com/terminalika/terminalika-core"
 )
 
-// Tiles are tileW cells wide and tileH tall with a one-cell gutter between
-// them, so the board is boardW x boardH.
+// Tiles are tileW cells wide and tileH tall and sit flush against each
+// other, so the board is boardW x boardH.
 const (
 	tileW  = 7
 	tileH  = 3
-	gutter = 1
-	boardW = size*tileW + (size-1)*gutter
-	boardH = size*tileH + (size-1)*gutter
+	boardW = size * tileW
+	boardH = size * tileH
 )
 
 type boardOrigin struct {
@@ -23,10 +22,10 @@ type boardOrigin struct {
 	topY  int
 }
 
-// tileStyle is the original game's palette, one entry per power of two; a
-// tile past the table keeps the last colour.
+// tileStyles is the original game's palette, one entry per power of two; a
+// tile past the table gets beyondStyle. Empty cells are not in it: they are
+// left in the terminal's own colours.
 var tileStyles = map[int]tcell.Style{
-	0:    tcell.StyleDefault.Background(tcell.NewRGBColor(0xcd, 0xc1, 0xb4)).Foreground(tcell.NewRGBColor(0xcd, 0xc1, 0xb4)),
 	2:    tcell.StyleDefault.Background(tcell.NewRGBColor(0xee, 0xe4, 0xda)).Foreground(tcell.NewRGBColor(0x77, 0x6e, 0x65)),
 	4:    tcell.StyleDefault.Background(tcell.NewRGBColor(0xed, 0xe0, 0xc8)).Foreground(tcell.NewRGBColor(0x77, 0x6e, 0x65)),
 	8:    tcell.StyleDefault.Background(tcell.NewRGBColor(0xf2, 0xb1, 0x79)).Foreground(tcell.NewRGBColor(0xf9, 0xf6, 0xf2)),
@@ -74,16 +73,16 @@ func (g *Game) drawTiles(screen tcell.Screen, origin boardOrigin) {
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			v := g.board[y][x]
+			if v == 0 {
+				continue // the terminal's own background shows through
+			}
 			style := styleFor(v)
-			left := origin.leftX + x*(tileW+gutter)
-			top := origin.topY + y*(tileH+gutter)
+			left := origin.leftX + x*tileW
+			top := origin.topY + y*tileH
 			for dy := 0; dy < tileH; dy++ {
 				for dx := 0; dx < tileW; dx++ {
 					screen.SetContent(left+dx, top+dy, ' ', nil, style)
 				}
-			}
-			if v == 0 {
-				continue
 			}
 			label := strconv.Itoa(v)
 			if v >= winTile {
