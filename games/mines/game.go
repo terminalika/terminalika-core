@@ -1,7 +1,8 @@
-// Package mines implements Minesweeper for terminalika-core: a 9x9 field
-// with ten mines, a cursor to walk it, one key to reveal and one to flag.
-// The first reveal is always safe. Nothing moves on its own - the clock only
-// times the run - so the field waits as long as the player does.
+// Package mines implements Minesweeper for terminalika-core: a field of
+// mines at one of three sizes, a cursor to walk it, one key to reveal and
+// one to flag. The first reveal is always safe. Nothing moves on its own -
+// the clock only times the run - so the field waits as long as the player
+// does.
 package mines
 
 import (
@@ -17,11 +18,6 @@ import (
 )
 
 const (
-	boardColumns = 9
-	boardRows    = 9
-	mineCount    = 10
-	safeCells    = boardColumns*boardRows - mineCount
-
 	gameName = "mines"
 
 	// Scoring: every safe cell revealed, and a bonus for clearing the field
@@ -39,12 +35,30 @@ const (
 	plantFlagStep = 50 * time.Millisecond
 )
 
+// Level is a field size and mine count.
+type Level struct {
+	Name       string
+	Cols, Rows int
+	Mines      int
+	key        rune   // the key that picks it
+	scoreName  string // the highscore entry; the first level owns the plain game name
+}
+
+// Levels are the classic three; the expert field is the widest that still
+// fits an 80-column terminal at two cells per square.
+var Levels = []Level{
+	{Name: "beginner", Cols: 9, Rows: 9, Mines: 10, key: '1', scoreName: gameName},
+	{Name: "intermediate", Cols: 16, Rows: 16, Mines: 40, key: '2', scoreName: gameName + "-intermediate"},
+	{Name: "expert", Cols: 30, Rows: 16, Mines: 99, key: '3', scoreName: gameName + "-expert"},
+}
+
 // Command types.
 const (
 	cmdMove   = "mines.move"
 	cmdCursor = "mines.cursor"
 	cmdReveal = "mines.reveal"
 	cmdFlag   = "mines.flag"
+	cmdLevel  = "mines.level"
 	cmdPause  = "mines.pause"
 	cmdResume = "mines.resume"
 	cmdReset  = "mines.reset"
@@ -57,6 +71,7 @@ const (
 	evExploded = "mines.exploded"
 	evCleared  = "mines.cleared"
 	evGameOver = "mines.game_over"
+	evLevel    = "mines.level_changed"
 	evPaused   = "game.paused"
 	evResumed  = "game.resumed"
 	evReset    = "game.reset"
@@ -85,9 +100,10 @@ type cell struct {
 
 // Game holds the full Minesweeper state. It implements core.Game.
 type Game struct {
-	cells  [boardRows][boardColumns]cell
-	placed bool // mines are placed on the first reveal, around it
-	cx, cy int  // cursor
+	level  Level
+	cells  [][]cell // cells[y][x]
+	placed bool     // mines are placed on the first reveal, around it
+	cx, cy int      // cursor
 
 	revealedCount int
 	flagCount     int
@@ -144,6 +160,13 @@ type gameOverPayload struct {
 	Won   bool `json:"won"`
 }
 
+type levelPayload struct {
+	Level string `json:"level"`
+	Cols  int    `json:"cols"`
+	Rows  int    `json:"rows"`
+	Mines int    `json:"mines"`
+}
+
 type pausedPayload struct {
 	Reason string `json:"reason,omitempty"`
 }
@@ -181,8 +204,8 @@ func (g *Game) emit(typ string, payload any) {
 	g.emitter.Emit(ev)
 }
 
-// New returns a fresh field that persists best scores to the default
-// location.
+// New returns a fresh beginner field that persists best scores to the
+// default location.
 func New() *Game {
 	store, err := highscore.Open(highscore.DefaultPath())
 	if err != nil {
@@ -191,9 +214,9 @@ func New() *Game {
 	return NewWithStore(store)
 }
 
-// NewWithStore returns a fresh field using the given score store.
+// NewWithStore returns a fresh beginner field using the given score store.
 func NewWithStore(store *highscore.Store) *Game {
-	g := &Game{store: store, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
+	g := &Game{level: Levels[0], store: store, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
 	g.Reset()
 	return g
 }
@@ -207,13 +230,16 @@ func (g *Game) Init(screen tcell.Screen) error {
 
 // Reset covers the field again; the mines are placed on the first reveal.
 func (g *Game) Reset() {
-	g.cells = [boardRows][boardColumns]cell{}
+	g.cells = make([][]cell, g.level.Rows)
+	for y := range g.cells {
+		g.cells[y] = make([]cell, g.level.Cols)
+	}
 	g.placed = false
-	g.cx, g.cy = boardColumns/2, boardRows/2
+	g.cx, g.cy = g.level.Cols/2, g.level.Rows/2
 	g.revealedCount = 0
 	g.flagCount = 0
 	g.score = 0
-	g.best = g.store.Best(gameName)
+	g.best = g.store.Best(g.level.scoreName)
 	g.won = false
 	g.gameOver = false
 	g.paused = false
@@ -223,15 +249,38 @@ func (g *Game) Reset() {
 	g.emit(evReset, nil)
 }
 
+// setLevel switches to another field size and starts over there.
+func (g *Game) setLevel(l Level) {
+	g.level = l
+	g.emit(evLevel, levelPayload{Level: l.Name, Cols: l.Cols, Rows: l.Rows, Mines: l.Mines})
+	g.Reset()
+}
+
+// safeCells is how many cells have to be revealed to clear the field.
+func (g *Game) safeCells() int {
+	return g.level.Cols*g.level.Rows - g.level.Mines
+}
+
 // Update does nothing: the field has no clock of its own, and the run's
 // timer is read when drawn.
 func (g *Game) Update() {}
 
 // HandleInput handles the game-specific keys: arrows, WASD and HJKL move
-// the cursor, Enter and X reveal, F flags. SPACE, R and ESC are reserved
-// for the launcher and are never claimed here.
+// the cursor, Enter and X reveal, F flags, 1/2/3 pick a level. SPACE, R
+// and ESC are reserved for the launcher and are never claimed here.
 func (g *Game) HandleInput(ev *tcell.EventKey) bool {
-	if g.gameOver || g.paused {
+	if g.paused {
+		return false
+	}
+	if ev.Key() == tcell.KeyRune {
+		for _, l := range Levels {
+			if ev.Rune() == l.key {
+				g.setLevel(l)
+				return true
+			}
+		}
+	}
+	if g.gameOver {
 		return false
 	}
 
@@ -355,6 +404,21 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 			return fmt.Errorf("cell %d,%d is already revealed", x, y)
 		}
 		return nil
+	case cmdLevel:
+		var p levelPayload
+		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+			return fmt.Errorf("invalid payload: %w", err)
+		}
+		for _, l := range Levels {
+			if l.Name == p.Level {
+				if g.paused {
+					return fmt.Errorf("game is paused")
+				}
+				g.setLevel(l)
+				return nil
+			}
+		}
+		return fmt.Errorf("unknown level %q", p.Level)
 	case cmdPause:
 		var p pausedPayload
 		if len(cmd.Payload) > 0 {
@@ -391,7 +455,7 @@ func (g *Game) cellFrom(payload json.RawMessage, cursorDefault bool) (x, y int, 
 		}
 		return g.cx, g.cy, nil
 	}
-	if !inField(*p.X, *p.Y) {
+	if !g.inField(*p.X, *p.Y) {
 		return 0, 0, fmt.Errorf("cell %d,%d is off the field", *p.X, *p.Y)
 	}
 	return *p.X, *p.Y, nil
@@ -402,10 +466,14 @@ func (g *Game) Commands() []core.CommandSpec {
 	cellSchema := core.MustJSON(map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"x": map[string]any{"type": "integer", "minimum": 0, "maximum": boardColumns - 1},
-			"y": map[string]any{"type": "integer", "minimum": 0, "maximum": boardRows - 1},
+			"x": map[string]any{"type": "integer", "minimum": 0},
+			"y": map[string]any{"type": "integer", "minimum": 0},
 		},
 	})
+	levelNames := make([]string, len(Levels))
+	for i, l := range Levels {
+		levelNames[i] = l.Name
+	}
 	return []core.CommandSpec{
 		{Name: cmdMove, Description: "move the cursor one cell", Schema: core.MustJSON(map[string]any{
 			"type": "object",
@@ -417,6 +485,13 @@ func (g *Game) Commands() []core.CommandSpec {
 		{Name: cmdCursor, Description: "put the cursor on a cell", Schema: cellSchema},
 		{Name: cmdReveal, Description: "reveal a cell (the cursor's by default); on a satisfied number, its neighbours", Schema: cellSchema},
 		{Name: cmdFlag, Description: "toggle the flag on a cell (the cursor's by default)", Schema: cellSchema},
+		{Name: cmdLevel, Description: "pick a field size and start over", Schema: core.MustJSON(map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"level": map[string]any{"type": "string", "enum": levelNames},
+			},
+			"required": []string{"level"},
+		})},
 		{Name: cmdPause, Description: "pause the game", Schema: core.MustJSON(map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -428,8 +503,8 @@ func (g *Game) Commands() []core.CommandSpec {
 	}
 }
 
-func inField(x, y int) bool {
-	return x >= 0 && x < boardColumns && y >= 0 && y < boardRows
+func (g *Game) inField(x, y int) bool {
+	return x >= 0 && x < g.level.Cols && y >= 0 && y < g.level.Rows
 }
 
 // moveCursor steps the cursor, staying on the field.
@@ -445,7 +520,7 @@ func (g *Game) moveCursor(d direction) bool {
 	case dirRight:
 		x++
 	}
-	if !inField(x, y) {
+	if !g.inField(x, y) {
 		return false
 	}
 	g.cx, g.cy = x, y
@@ -453,13 +528,13 @@ func (g *Game) moveCursor(d direction) bool {
 }
 
 // neighbours calls fn for every cell around (x, y) that is on the field.
-func neighbours(x, y int, fn func(nx, ny int)) {
+func (g *Game) neighbours(x, y int, fn func(nx, ny int)) {
 	for dy := -1; dy <= 1; dy++ {
 		for dx := -1; dx <= 1; dx++ {
 			if dx == 0 && dy == 0 {
 				continue
 			}
-			if nx, ny := x+dx, y+dy; inField(nx, ny) {
+			if nx, ny := x+dx, y+dy; g.inField(nx, ny) {
 				fn(nx, ny)
 			}
 		}
@@ -470,8 +545,8 @@ func neighbours(x, y int, fn func(nx, ny int)) {
 // neighbours, so the first reveal always opens up, then counts adjacents.
 func (g *Game) placeMines(x, y int) {
 	var candidates []cellPos
-	for cy := 0; cy < boardRows; cy++ {
-		for cx := 0; cx < boardColumns; cx++ {
+	for cy := 0; cy < g.level.Rows; cy++ {
+		for cx := 0; cx < g.level.Cols; cx++ {
 			if abs(cx-x) <= 1 && abs(cy-y) <= 1 {
 				continue
 			}
@@ -479,7 +554,7 @@ func (g *Game) placeMines(x, y int) {
 		}
 	}
 	g.rng.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
-	for _, c := range candidates[:mineCount] {
+	for _, c := range candidates[:g.level.Mines] {
 		g.cells[c.Y][c.X].mine = true
 	}
 	g.countAdjacents()
@@ -489,10 +564,10 @@ func (g *Game) placeMines(x, y int) {
 
 // countAdjacents fills in how many mines surround every cell.
 func (g *Game) countAdjacents() {
-	for cy := 0; cy < boardRows; cy++ {
-		for cx := 0; cx < boardColumns; cx++ {
+	for cy := 0; cy < g.level.Rows; cy++ {
+		for cx := 0; cx < g.level.Cols; cx++ {
 			n := 0
-			neighbours(cx, cy, func(nx, ny int) {
+			g.neighbours(cx, cy, func(nx, ny int) {
 				if g.cells[ny][nx].mine {
 					n++
 				}
@@ -504,8 +579,8 @@ func (g *Game) countAdjacents() {
 
 // reveal opens a cell. A hidden cell opens - and, when it has no mines
 // around it, floods outwards. A revealed number whose flags match it opens
-// its unflagged neighbours (a chord). Flagged cells and empty chords do
-// nothing and report false.
+// its unflagged neighbours (a chord). Flagged cells, empty chords and a
+// finished run do nothing and report false.
 func (g *Game) reveal(x, y int) bool {
 	c := &g.cells[y][x]
 	if g.gameOver || c.flagged {
@@ -534,7 +609,7 @@ func (g *Game) chord(x, y int) bool {
 		return false
 	}
 	flags, hidden := 0, 0
-	neighbours(x, y, func(nx, ny int) {
+	g.neighbours(x, y, func(nx, ny int) {
 		switch {
 		case g.cells[ny][nx].flagged:
 			flags++
@@ -548,7 +623,7 @@ func (g *Game) chord(x, y int) bool {
 	now := time.Now()
 	total := 0
 	var hit *cellPos
-	neighbours(x, y, func(nx, ny int) {
+	g.neighbours(x, y, func(nx, ny int) {
 		n := &g.cells[ny][nx]
 		if n.flagged || n.revealed || hit != nil {
 			return
@@ -586,7 +661,7 @@ func (g *Game) flood(x, y int, from time.Time) int {
 		if c.adjacent != 0 {
 			continue
 		}
-		neighbours(it.x, it.y, func(nx, ny int) {
+		g.neighbours(it.x, it.y, func(nx, ny int) {
 			n := &g.cells[ny][nx]
 			if n.revealed || n.flagged || n.mine {
 				return
@@ -603,7 +678,7 @@ func (g *Game) flood(x, y int, from time.Time) int {
 func (g *Game) afterReveal(x, y, opened int) {
 	g.score += opened * pointsPerCell
 	g.emit(evRevealed, revealedPayload{X: x, Y: y, Cells: opened, Score: g.score})
-	if g.revealedCount < safeCells {
+	if g.revealedCount < g.safeCells() {
 		return
 	}
 	g.stopClock()
@@ -624,14 +699,14 @@ func (g *Game) afterReveal(x, y, opened int) {
 // after another outwards from the cursor.
 func (g *Game) plantRemainingFlags() {
 	var todo []cellPos
-	for y := 0; y < boardRows; y++ {
-		for x := 0; x < boardColumns; x++ {
+	for y := 0; y < g.level.Rows; y++ {
+		for x := 0; x < g.level.Cols; x++ {
 			if g.cells[y][x].mine && !g.cells[y][x].flagged {
 				todo = append(todo, cellPos{X: x, Y: y})
 			}
 		}
 	}
-	g.sortByDistance(todo, g.cx, g.cy)
+	sortByDistance(todo, g.cx, g.cy)
 	now := time.Now()
 	for i, p := range todo {
 		c := &g.cells[p.Y][p.X]
@@ -651,8 +726,8 @@ func (g *Game) explode(x, y int) {
 	hit.showAt = now
 
 	var others []cellPos
-	for cy := 0; cy < boardRows; cy++ {
-		for cx := 0; cx < boardColumns; cx++ {
+	for cy := 0; cy < g.level.Rows; cy++ {
+		for cx := 0; cx < g.level.Cols; cx++ {
 			c := g.cells[cy][cx]
 			if (cx == x && cy == y) || c.revealed {
 				continue
@@ -662,7 +737,7 @@ func (g *Game) explode(x, y int) {
 			}
 		}
 	}
-	g.sortByDistance(others, x, y)
+	sortByDistance(others, x, y)
 	for i, p := range others {
 		c := &g.cells[p.Y][p.X]
 		c.revealed = true
@@ -675,13 +750,13 @@ func (g *Game) explode(x, y int) {
 	g.emit(evGameOver, gameOverPayload{Score: g.score, Best: g.best, Won: false})
 }
 
-// finish closes the run and records the score.
+// finish closes the run and records the score for this level.
 func (g *Game) finish() {
 	g.gameOver = true
 	if g.score > g.best {
 		g.best = g.score
 	}
-	g.store.Submit(gameName, g.score)
+	g.store.Submit(g.level.scoreName, g.score)
 }
 
 // flag toggles the flag on a hidden cell.
@@ -703,7 +778,7 @@ func (g *Game) flag(x, y int) bool {
 
 // sortByDistance orders cells by how far they are from (x, y), nearest
 // first, reading order on ties.
-func (g *Game) sortByDistance(cells []cellPos, x, y int) {
+func sortByDistance(cells []cellPos, x, y int) {
 	sort.SliceStable(cells, func(i, j int) bool {
 		di := abs(cells[i].X-x) + abs(cells[i].Y-y)
 		dj := abs(cells[j].X-x) + abs(cells[j].Y-y)

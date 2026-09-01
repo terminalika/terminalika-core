@@ -104,8 +104,8 @@ func TestHitEmitsExplodedThenGameOver(t *testing.T) {
 
 func TestClearEmitsClearedThenGameOver(t *testing.T) {
 	g, r := newEventGame()
-	for y := 0; y < boardRows; y++ {
-		for x := 0; x < boardColumns; x++ {
+	for y := 0; y < g.level.Rows; y++ {
+		for x := 0; x < g.level.Cols; x++ {
 			if !g.cells[y][x].mine && !g.cells[y][x].revealed {
 				g.reveal(x, y)
 			}
@@ -158,7 +158,7 @@ func TestCommandsListsSupportedCommands(t *testing.T) {
 	for _, spec := range g.Commands() {
 		names[spec.Name] = true
 	}
-	for _, want := range []string{cmdMove, cmdCursor, cmdReveal, cmdFlag, cmdPause, cmdResume, cmdReset} {
+	for _, want := range []string{cmdMove, cmdCursor, cmdReveal, cmdFlag, cmdLevel, cmdPause, cmdResume, cmdReset} {
 		if !names[want] {
 			t.Fatalf("Commands() missing %q", want)
 		}

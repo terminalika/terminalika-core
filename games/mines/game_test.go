@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
+	core "github.com/terminalika/terminalika-core"
 	"github.com/terminalika/terminalika-core/highscore"
 )
 
@@ -14,10 +16,10 @@ func newTestGame() *Game {
 	return g
 }
 
-// layout builds a field from rows of '*' (mine) and '.' (safe), skipping
-// the random placement.
-func layout(g *Game, rows [boardRows]string) {
-	g.cells = [boardRows][boardColumns]cell{}
+// layout builds a beginner field from rows of '*' (mine) and '.' (safe),
+// skipping the random placement.
+func layout(g *Game, rows []string) {
+	g.Reset()
 	for y, row := range rows {
 		for x, ch := range row {
 			g.cells[y][x].mine = ch == '*'
@@ -30,8 +32,8 @@ func layout(g *Game, rows [boardRows]string) {
 
 // corner has a mine-free top-left region so a reveal there floods, three
 // mines tucked into the top-right corner, one in the open and the rest
-// along the bottom: ten in all, like a real field.
-var corner = [boardRows]string{
+// along the bottom: ten in all, like a real beginner field.
+var corner = []string{
 	".......**",
 	"........*",
 	".........",
@@ -45,8 +47,8 @@ var corner = [boardRows]string{
 
 func mines(g *Game) int {
 	n := 0
-	for y := 0; y < boardRows; y++ {
-		for x := 0; x < boardColumns; x++ {
+	for y := 0; y < g.level.Rows; y++ {
+		for x := 0; x < g.level.Cols; x++ {
 			if g.cells[y][x].mine {
 				n++
 			}
@@ -65,8 +67,8 @@ func TestFirstRevealPlacesMinesAwayFromIt(t *testing.T) {
 
 		g.reveal(4, 4)
 
-		if n := mines(g); n != mineCount {
-			t.Fatalf("seed %d: %d mines, want %d", seed, n, mineCount)
+		if n := mines(g); n != g.level.Mines {
+			t.Fatalf("seed %d: %d mines, want %d", seed, n, g.level.Mines)
 		}
 		for y := 3; y <= 5; y++ {
 			for x := 3; x <= 5; x++ {
@@ -235,8 +237,8 @@ func TestClearingTheFieldWinsPlantsFlagsAndScores(t *testing.T) {
 	layout(g, corner)
 	g.runningSince = time.Now().Add(-10 * time.Second)
 
-	for y := 0; y < boardRows; y++ {
-		for x := 0; x < boardColumns; x++ {
+	for y := 0; y < g.level.Rows; y++ {
+		for x := 0; x < g.level.Cols; x++ {
 			if !g.cells[y][x].mine && !g.cells[y][x].revealed && !g.gameOver {
 				g.reveal(x, y)
 			}
@@ -246,13 +248,13 @@ func TestClearingTheFieldWinsPlantsFlagsAndScores(t *testing.T) {
 	if !g.gameOver || !g.won {
 		t.Fatalf("gameOver=%v won=%v, want a cleared field", g.gameOver, g.won)
 	}
-	if g.revealedCount != safeCells {
-		t.Fatalf("revealed %d, want %d", g.revealedCount, safeCells)
+	if g.revealedCount != g.safeCells() {
+		t.Fatalf("revealed %d, want %d", g.revealedCount, g.safeCells())
 	}
 	if g.flagCount != mines(g) {
 		t.Fatalf("flags = %d after the clear, want every one of the %d mines flagged", g.flagCount, mines(g))
 	}
-	cells := boardColumns*boardRows - mines(g)
+	cells := g.safeCells()
 	if g.score < cells*pointsPerCell+clearBonus+timeBonusMax-11 || g.score > cells*pointsPerCell+clearBonus+timeBonusMax-10 {
 		t.Fatalf("score = %d, want cells + clear bonus + ~290 time bonus", g.score)
 	}
@@ -261,8 +263,8 @@ func TestClearingTheFieldWinsPlantsFlagsAndScores(t *testing.T) {
 	}
 
 	var planted []time.Time
-	for y := 0; y < boardRows; y++ {
-		for x := 0; x < boardColumns; x++ {
+	for y := 0; y < g.level.Rows; y++ {
+		for x := 0; x < g.level.Cols; x++ {
 			if c := g.cells[y][x]; c.mine && !c.showAt.IsZero() {
 				planted = append(planted, c.showAt)
 			}
@@ -316,6 +318,46 @@ func TestExistingBestIsNotLowered(t *testing.T) {
 
 	if g.best != 5000 || store.Best(gameName) != 5000 {
 		t.Fatalf("best = %d, store = %d; want 5000 to remain", g.best, store.Best(gameName))
+	}
+}
+
+func TestLevelsResizeTheFieldAndKeepTheirOwnBest(t *testing.T) {
+	store := highscore.NewInMemory()
+	store.Submit(gameName, 700)
+	store.Submit(gameName+"-expert", 9000)
+	g := NewWithStore(store)
+	g.rng = rand.New(rand.NewSource(3))
+	g.reveal(4, 4)
+
+	g.HandleInput(tcell.NewEventKey(tcell.KeyRune, '3', 0))
+
+	if g.level.Name != "expert" || len(g.cells) != 16 || len(g.cells[0]) != 30 {
+		t.Fatalf("level = %s, field %dx%d; want expert 30x16", g.level.Name, len(g.cells[0]), len(g.cells))
+	}
+	if g.placed || g.revealedCount != 0 || g.score != 0 {
+		t.Fatal("picking a level should start over")
+	}
+	if g.best != 9000 {
+		t.Fatalf("best = %d, want expert's own 9000", g.best)
+	}
+	if g.cx != 15 || g.cy != 8 {
+		t.Fatalf("cursor = %d,%d, want the middle of the new field", g.cx, g.cy)
+	}
+
+	g.reveal(15, 8)
+	if n := mines(g); n != 99 {
+		t.Fatalf("%d mines on the expert field, want 99", n)
+	}
+	if g.NeededSize().Cols < 60 || g.NeededSize().Rows != 20 {
+		t.Fatalf("NeededSize = %+v, want at least 60 wide and 20 tall", g.NeededSize())
+	}
+
+	err := g.HandleCommand(core.Command{Type: cmdLevel, Payload: core.MustJSON(levelPayload{Level: "beginner"})})
+	if err != nil || g.level.Name != "beginner" || g.best != 700 {
+		t.Fatalf("level command: err=%v level=%s best=%d", err, g.level.Name, g.best)
+	}
+	if err := g.HandleCommand(core.Command{Type: cmdLevel, Payload: core.MustJSON(levelPayload{Level: "nightmare"})}); err == nil {
+		t.Fatal("an unknown level should be rejected")
 	}
 }
 
