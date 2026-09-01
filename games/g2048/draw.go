@@ -23,9 +23,14 @@ type boardOrigin struct {
 	topY  int
 }
 
+// boardStyle is the slight warm tint under the whole board - the original
+// game's board colour, darkened - so the empty cells read as part of the
+// board rather than as holes in it.
+var boardStyle = tcell.StyleDefault.Background(tcell.NewRGBColor(0x4a, 0x44, 0x3d))
+
 // tileStyles is the original game's palette, one entry per power of two; a
-// tile past the table gets beyondStyle. Empty cells are not in it: they are
-// left in the terminal's own colours.
+// tile past the table gets beyondStyle. Empty cells are not in it: they
+// show boardStyle.
 var tileStyles = map[int]tcell.Style{
 	2:    tcell.StyleDefault.Background(tcell.NewRGBColor(0xee, 0xe4, 0xda)).Foreground(tcell.NewRGBColor(0x77, 0x6e, 0x65)),
 	4:    tcell.StyleDefault.Background(tcell.NewRGBColor(0xed, 0xe0, 0xc8)).Foreground(tcell.NewRGBColor(0x77, 0x6e, 0x65)),
@@ -64,13 +69,23 @@ func (g *Game) Draw(screen tcell.Screen) {
 		topY:  (h - boardH) / 2,
 	}
 
+	g.drawBoard(screen, origin)
 	g.drawTiles(screen, origin)
 	g.drawStatus(screen, origin)
 
 	screen.Show()
 }
 
-// drawTiles paints the board - or, while a slide is on, the pre-move tiles
+// drawBoard tints the board's rectangle; the tiles go on top of it.
+func (g *Game) drawBoard(screen tcell.Screen, origin boardOrigin) {
+	for dy := 0; dy < boardH; dy++ {
+		for dx := 0; dx < boardW; dx++ {
+			screen.SetContent(origin.leftX+dx, origin.topY+dy, ' ', nil, boardStyle)
+		}
+	}
+}
+
+// drawTiles paints the tiles - or, while a slide is on, the pre-move tiles
 // part-way along their trips, with the merges and the spawned tile still
 // to come.
 func (g *Game) drawTiles(screen tcell.Screen, origin boardOrigin) {
@@ -103,8 +118,8 @@ func (g *Game) drawTiles(screen tcell.Screen, origin boardOrigin) {
 }
 
 // drawTile paints one tile with its top-left corner at board coordinates
-// (x, y), which may fall between cells mid-slide. Empty cells are never
-// painted: the terminal's own background shows through.
+// (x, y), which may fall between cells mid-slide. Empty cells are left to
+// drawBoard's tint.
 func (g *Game) drawTile(screen tcell.Screen, origin boardOrigin, v int, x, y float64) {
 	style := styleFor(v)
 	left := origin.leftX + int(math.Round(x*tileW))

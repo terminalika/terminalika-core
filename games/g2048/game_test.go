@@ -124,16 +124,17 @@ func TestMoveRecordsTripsAndTheSlideEnds(t *testing.T) {
 }
 
 // paintedBoardCells counts the cells inside the board that carry a tile
-// background; empty cells are never painted, so this is tiles x tileW x
-// tileH.
+// background; empty cells only carry the board tint, so this is tiles x
+// tileW x tileH.
 func paintedBoardCells(screen tcell.SimulationScreen) int {
 	cells, w, h := screen.GetContents()
+	_, boardBg, _ := boardStyle.Decompose()
 	leftX, topY := (w-boardW)/2, (h-boardH)/2
 	painted := 0
 	for y := topY; y < topY+boardH; y++ {
 		for x := leftX; x < leftX+boardW; x++ {
 			_, bg, _ := cells[y*w+x].Style.Decompose()
-			if bg != tcell.ColorDefault {
+			if bg != tcell.ColorDefault && bg != boardBg {
 				painted++
 			}
 		}
