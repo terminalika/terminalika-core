@@ -8,7 +8,7 @@ import (
 func TestGlobalKeysHints(t *testing.T) {
 	keys := GlobalKeys{Pause: "Space", Reset: "R", Leave: "Esc", LeaveAction: "menu"}
 	got := JoinHints("Arrows: move", keys.PauseHint(), keys.ResetHint("rematch"), keys.LeaveHint())
-	if want := "Arrows: move  Space: pause  R: rematch  Esc: menu"; got != want {
+	if want := "Arrows: move  Space: pause/resume  R: rematch  Esc: menu"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 

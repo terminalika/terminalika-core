@@ -37,7 +37,7 @@ func SetGlobalKeys(g Game, keys GlobalKeys) {
 
 // PauseHint is the pause key's hint, "" when there is none.
 func (k GlobalKeys) PauseHint() string {
-	return hint(k.Pause, "pause")
+	return hint(k.Pause, "pause/resume")
 }
 
 // ResetHint is the reset key's hint with the game's word for what a reset is
