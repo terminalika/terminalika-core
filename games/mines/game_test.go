@@ -10,16 +10,18 @@ import (
 	"github.com/terminalika/terminalika-core/highscore"
 )
 
+// newTestGame is a beginner field past the picker.
 func newTestGame() *Game {
 	g := NewWithStore(highscore.NewInMemory())
 	g.rng = rand.New(rand.NewSource(1))
+	g.start(Levels[0])
 	return g
 }
 
 // layout builds a beginner field from rows of '*' (mine) and '.' (safe),
 // skipping the random placement.
 func layout(g *Game, rows []string) {
-	g.Reset()
+	g.start(Levels[0])
 	for y, row := range rows {
 		for x, ch := range row {
 			g.cells[y][x].mine = ch == '*'
@@ -61,6 +63,7 @@ func TestFirstRevealPlacesMinesAwayFromIt(t *testing.T) {
 	for seed := int64(0); seed < 20; seed++ {
 		g := NewWithStore(highscore.NewInMemory())
 		g.rng = rand.New(rand.NewSource(seed))
+		g.start(Levels[0])
 		if g.placed {
 			t.Fatal("mines placed before the first reveal")
 		}
@@ -321,38 +324,76 @@ func TestExistingBestIsNotLowered(t *testing.T) {
 	}
 }
 
-func TestLevelsResizeTheFieldAndKeepTheirOwnBest(t *testing.T) {
+func key(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, 0, 0) }
+
+func TestGameOpensOnThePickerAndEnterStartsTheHighlightedLevel(t *testing.T) {
 	store := highscore.NewInMemory()
 	store.Submit(gameName, 700)
 	store.Submit(gameName+"-expert", 9000)
 	g := NewWithStore(store)
 	g.rng = rand.New(rand.NewSource(3))
-	g.reveal(4, 4)
 
-	g.HandleInput(tcell.NewEventKey(tcell.KeyRune, '3', 0))
+	if !g.choosing || g.level.Name != "beginner" || g.best != 700 {
+		t.Fatalf("fresh game: choosing=%v level=%s best=%d; want the picker on beginner", g.choosing, g.level.Name, g.best)
+	}
+	if g.reveal(4, 4) || g.flag(4, 4) || g.placed {
+		t.Fatal("nothing should happen on the field while the picker is up")
+	}
 
-	if g.level.Name != "expert" || len(g.cells) != 16 || len(g.cells[0]) != 30 {
-		t.Fatalf("level = %s, field %dx%d; want expert 30x16", g.level.Name, len(g.cells[0]), len(g.cells))
+	if !g.HandleInput(key(tcell.KeyUp)) || g.level.Name != "beginner" {
+		t.Fatal("up on the first entry should stay put")
 	}
-	if g.placed || g.revealedCount != 0 || g.score != 0 {
-		t.Fatal("picking a level should start over")
+	g.HandleInput(key(tcell.KeyDown))
+	g.HandleInput(key(tcell.KeyDown))
+	if g.level.Name != "expert" || g.best != 9000 || !g.choosing {
+		t.Fatalf("after two downs: level=%s best=%d choosing=%v; want expert highlighted with its best", g.level.Name, g.best, g.choosing)
 	}
-	if g.best != 9000 {
-		t.Fatalf("best = %d, want expert's own 9000", g.best)
+	g.HandleInput(key(tcell.KeyDown))
+	if g.level.Name != "expert" {
+		t.Fatal("down on the last entry should stay put")
+	}
+
+	g.HandleInput(key(tcell.KeyEnter))
+
+	if g.choosing || len(g.cells) != 16 || len(g.cells[0]) != 30 {
+		t.Fatalf("after Enter: choosing=%v field %dx%d; want an expert field", g.choosing, len(g.cells[0]), len(g.cells))
 	}
 	if g.cx != 15 || g.cy != 8 {
 		t.Fatalf("cursor = %d,%d, want the middle of the new field", g.cx, g.cy)
 	}
-
 	g.reveal(15, 8)
 	if n := mines(g); n != 99 {
 		t.Fatalf("%d mines on the expert field, want 99", n)
 	}
-	if g.NeededSize().Cols < 60 || g.NeededSize().Rows != 20 {
-		t.Fatalf("NeededSize = %+v, want at least 60 wide and 20 tall", g.NeededSize())
-	}
 
-	err := g.HandleCommand(core.Command{Type: cmdLevel, Payload: core.MustJSON(levelPayload{Level: "beginner"})})
+	g.Reset()
+	if !g.choosing || g.level.Name != "expert" || g.placed {
+		t.Fatalf("Reset: choosing=%v level=%s placed=%v; want the picker back on expert", g.choosing, g.level.Name, g.placed)
+	}
+}
+
+func TestNeededSizeFitsEveryLevel(t *testing.T) {
+	g := NewWithStore(highscore.NewInMemory())
+	size := g.NeededSize()
+	if size.Cols < 60 || size.Rows != 20 {
+		t.Fatalf("NeededSize = %+v, want at least 60 wide and 20 tall for the expert field", size)
+	}
+	g.start(Levels[0])
+	if g.NeededSize() != size {
+		t.Fatalf("NeededSize changed to %+v after starting; the launcher only asks once", g.NeededSize())
+	}
+}
+
+func TestLevelCommandStartsThatLevel(t *testing.T) {
+	store := highscore.NewInMemory()
+	store.Submit(gameName, 700)
+	g := NewWithStore(store)
+
+	err := g.HandleCommand(core.Command{Type: cmdLevel, Payload: core.MustJSON(levelPayload{Level: "intermediate"})})
+	if err != nil || g.choosing || g.level.Name != "intermediate" || len(g.cells) != 16 {
+		t.Fatalf("level command: err=%v choosing=%v level=%s", err, g.choosing, g.level.Name)
+	}
+	err = g.HandleCommand(core.Command{Type: cmdLevel, Payload: core.MustJSON(levelPayload{Level: "beginner"})})
 	if err != nil || g.level.Name != "beginner" || g.best != 700 {
 		t.Fatalf("level command: err=%v level=%s best=%d", err, g.level.Name, g.best)
 	}
@@ -368,6 +409,7 @@ func TestResetCoversTheField(t *testing.T) {
 	g.flag(6, 3)
 
 	g.Reset()
+	g.start(g.level)
 
 	if g.placed || g.revealedCount != 0 || g.flagCount != 0 || g.score != 0 || g.runTime() != 0 {
 		t.Fatalf("after Reset: placed=%v revealed=%d flags=%d score=%d time=%v", g.placed, g.revealedCount, g.flagCount, g.score, g.runTime())

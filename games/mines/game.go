@@ -40,16 +40,16 @@ type Level struct {
 	Name       string
 	Cols, Rows int
 	Mines      int
-	key        rune   // the key that picks it
 	scoreName  string // the highscore entry; the first level owns the plain game name
 }
 
 // Levels are the classic three; the expert field is the widest that still
-// fits an 80-column terminal at two cells per square.
+// fits an 80-column terminal at two cells per square. The game opens on a
+// picker listing them.
 var Levels = []Level{
-	{Name: "beginner", Cols: 9, Rows: 9, Mines: 10, key: '1', scoreName: gameName},
-	{Name: "intermediate", Cols: 16, Rows: 16, Mines: 40, key: '2', scoreName: gameName + "-intermediate"},
-	{Name: "expert", Cols: 30, Rows: 16, Mines: 99, key: '3', scoreName: gameName + "-expert"},
+	{Name: "beginner", Cols: 9, Rows: 9, Mines: 10, scoreName: gameName},
+	{Name: "intermediate", Cols: 16, Rows: 16, Mines: 40, scoreName: gameName + "-intermediate"},
+	{Name: "expert", Cols: 30, Rows: 16, Mines: 99, scoreName: gameName + "-expert"},
 }
 
 // Command types.
@@ -100,10 +100,13 @@ type cell struct {
 
 // Game holds the full Minesweeper state. It implements core.Game.
 type Game struct {
-	level  Level
-	cells  [][]cell // cells[y][x]
-	placed bool     // mines are placed on the first reveal, around it
-	cx, cy int      // cursor
+	// choosing is the picker the game opens on: level is the highlighted
+	// entry until Enter starts a field of that size.
+	choosing bool
+	level    Level
+	cells    [][]cell // cells[y][x]
+	placed   bool     // mines are placed on the first reveal, around it
+	cx, cy   int      // cursor
 
 	revealedCount int
 	flagCount     int
@@ -228,8 +231,16 @@ func (g *Game) Init(screen tcell.Screen) error {
 	return nil
 }
 
-// Reset covers the field again; the mines are placed on the first reveal.
+// Reset goes back to the picker, with the last level highlighted.
 func (g *Game) Reset() {
+	g.choosing = true
+	g.clear()
+	g.emit(evReset, nil)
+}
+
+// clear covers the field of the current level; the mines are placed on the
+// first reveal.
+func (g *Game) clear() {
 	g.cells = make([][]cell, g.level.Rows)
 	for y := range g.cells {
 		g.cells[y] = make([]cell, g.level.Cols)
@@ -246,14 +257,35 @@ func (g *Game) Reset() {
 	g.pauseReason = ""
 	g.elapsed = 0
 	g.runningSince = time.Time{}
-	g.emit(evReset, nil)
 }
 
-// setLevel switches to another field size and starts over there.
-func (g *Game) setLevel(l Level) {
+// start leaves the picker and opens a fresh field of the given level.
+func (g *Game) start(l Level) {
 	g.level = l
+	g.choosing = false
+	g.clear()
 	g.emit(evLevel, levelPayload{Level: l.Name, Cols: l.Cols, Rows: l.Rows, Mines: l.Mines})
-	g.Reset()
+}
+
+// levelIndex is the position of the current level in Levels.
+func (g *Game) levelIndex() int {
+	for i, l := range Levels {
+		if l.Name == g.level.Name {
+			return i
+		}
+	}
+	return 0
+}
+
+// pick moves the picker's highlight by delta, staying within Levels.
+func (g *Game) pick(delta int) bool {
+	i := g.levelIndex() + delta
+	if i < 0 || i >= len(Levels) {
+		return false
+	}
+	g.level = Levels[i]
+	g.best = g.store.Best(g.level.scoreName)
+	return true
 }
 
 // safeCells is how many cells have to be revealed to clear the field.
@@ -265,23 +297,16 @@ func (g *Game) safeCells() int {
 // timer is read when drawn.
 func (g *Game) Update() {}
 
-// HandleInput handles the game-specific keys: arrows, WASD and HJKL move
-// the cursor, Enter and X reveal, F flags, 1/2/3 pick a level. SPACE, R
-// and ESC are reserved for the launcher and are never claimed here.
+// HandleInput handles the game-specific keys. On the picker, up/down move
+// the highlight and Enter starts. On the field, arrows, WASD and HJKL move
+// the cursor, Enter and X reveal, F flags. SPACE, R and ESC are reserved
+// for the launcher and are never claimed here.
 func (g *Game) HandleInput(ev *tcell.EventKey) bool {
-	if g.paused {
+	if g.paused || g.gameOver {
 		return false
 	}
-	if ev.Key() == tcell.KeyRune {
-		for _, l := range Levels {
-			if ev.Rune() == l.key {
-				g.setLevel(l)
-				return true
-			}
-		}
-	}
-	if g.gameOver {
-		return false
+	if g.choosing {
+		return g.handlePickerKey(ev)
 	}
 
 	switch ev.Key() {
@@ -325,6 +350,34 @@ func (g *Game) HandleInput(ev *tcell.EventKey) bool {
 	return false
 }
 
+// handlePickerKey moves the picker's highlight or starts the field.
+func (g *Game) handlePickerKey(ev *tcell.EventKey) bool {
+	switch ev.Key() {
+	case tcell.KeyUp, tcell.KeyLeft:
+		g.pick(-1)
+		return true
+	case tcell.KeyDown, tcell.KeyRight:
+		g.pick(1)
+		return true
+	case tcell.KeyEnter:
+		g.start(g.level)
+		return true
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'w', 'W', 'k', 'K', 'a', 'A', 'h', 'H':
+			g.pick(-1)
+			return true
+		case 's', 'S', 'j', 'J', 'd', 'D', 'l', 'L':
+			g.pick(1)
+			return true
+		case 'x', 'X':
+			g.start(g.level)
+			return true
+		}
+	}
+	return false
+}
+
 // Pause blocks input and stops the clock.
 func (g *Game) Pause() {
 	if g.gameOver || g.paused {
@@ -342,7 +395,7 @@ func (g *Game) Resume() {
 	}
 	g.paused = false
 	g.pauseReason = ""
-	if g.placed {
+	if g.placed && !g.gameOver {
 		g.runningSince = time.Now()
 	}
 	g.emit(evResumed, nil)
@@ -363,7 +416,7 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 		if err != nil {
 			return err
 		}
-		if g.paused || g.gameOver {
+		if !g.running() {
 			return fmt.Errorf("game is not running")
 		}
 		if !g.moveCursor(d) {
@@ -375,7 +428,7 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 		if err != nil {
 			return err
 		}
-		if g.paused || g.gameOver {
+		if !g.running() {
 			return fmt.Errorf("game is not running")
 		}
 		g.cx, g.cy = x, y
@@ -385,7 +438,7 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 		if err != nil {
 			return err
 		}
-		if g.paused || g.gameOver {
+		if !g.running() {
 			return fmt.Errorf("game is not running")
 		}
 		if !g.reveal(x, y) {
@@ -397,7 +450,7 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 		if err != nil {
 			return err
 		}
-		if g.paused || g.gameOver {
+		if !g.running() {
 			return fmt.Errorf("game is not running")
 		}
 		if !g.flag(x, y) {
@@ -414,7 +467,7 @@ func (g *Game) HandleCommand(cmd core.Command) error {
 				if g.paused {
 					return fmt.Errorf("game is paused")
 				}
-				g.setLevel(l)
+				g.start(l)
 				return nil
 			}
 		}
@@ -485,7 +538,7 @@ func (g *Game) Commands() []core.CommandSpec {
 		{Name: cmdCursor, Description: "put the cursor on a cell", Schema: cellSchema},
 		{Name: cmdReveal, Description: "reveal a cell (the cursor's by default); on a satisfied number, its neighbours", Schema: cellSchema},
 		{Name: cmdFlag, Description: "toggle the flag on a cell (the cursor's by default)", Schema: cellSchema},
-		{Name: cmdLevel, Description: "pick a field size and start over", Schema: core.MustJSON(map[string]any{
+		{Name: cmdLevel, Description: "start a field of this size (also leaves the picker)", Schema: core.MustJSON(map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"level": map[string]any{"type": "string", "enum": levelNames},
@@ -501,6 +554,12 @@ func (g *Game) Commands() []core.CommandSpec {
 		{Name: cmdResume, Description: "resume the game"},
 		{Name: cmdReset, Description: "reset the game"},
 	}
+}
+
+// running reports whether a field is open to play: past the picker, not
+// paused, not over.
+func (g *Game) running() bool {
+	return !g.choosing && !g.paused && !g.gameOver
 }
 
 func (g *Game) inField(x, y int) bool {
@@ -582,8 +641,11 @@ func (g *Game) countAdjacents() {
 // its unflagged neighbours (a chord). Flagged cells, empty chords and a
 // finished run do nothing and report false.
 func (g *Game) reveal(x, y int) bool {
+	if g.choosing || g.gameOver {
+		return false
+	}
 	c := &g.cells[y][x]
-	if g.gameOver || c.flagged {
+	if c.flagged {
 		return false
 	}
 	if c.revealed {
@@ -761,8 +823,11 @@ func (g *Game) finish() {
 
 // flag toggles the flag on a hidden cell.
 func (g *Game) flag(x, y int) bool {
+	if g.choosing || g.gameOver {
+		return false
+	}
 	c := &g.cells[y][x]
-	if g.gameOver || c.revealed {
+	if c.revealed {
 		return false
 	}
 	c.flagged = !c.flagged

@@ -39,26 +39,61 @@ var (
 	}
 )
 
-// Draw renders the field, the cursor and the status bar.
+// Draw renders the picker or the field with its cursor, and the status bar.
+//
+// The status and hint lines hang on a frame the size of the largest field,
+// so they stay put whichever level is up; the picker and smaller fields sit
+// centred inside it. A terminal too small for the frame gets the frame
+// shrunk to what is actually drawn.
 func (g *Game) Draw(screen tcell.Screen) {
 	screen.Clear()
 	g.overlayOn = false
 
 	w, h := screen.Size()
-	boardW := g.level.Cols * cellWidth
-	if w < boardW || h < g.level.Rows {
+	areaW, areaH := g.areaSize()
+	if w < areaW || h < areaH {
 		return // terminal too small to draw
 	}
-
-	origin := boardOrigin{
-		leftX: (w - boardW) / 2,
-		topY:  (h - g.level.Rows) / 2,
+	frameW, frameH := frameSize()
+	if w < frameW {
+		frameW = areaW
+	}
+	if h < frameH {
+		frameH = areaH
 	}
 
-	g.drawField(screen, origin, time.Now())
-	g.drawStatus(screen, origin)
+	frame := boardOrigin{
+		leftX: (w - frameW) / 2,
+		topY:  (h - frameH) / 2,
+	}
+	area := boardOrigin{
+		leftX: frame.leftX + (frameW-areaW)/2,
+		topY:  frame.topY + (frameH-areaH)/2,
+	}
+
+	if g.choosing {
+		g.drawPicker(screen, area)
+	} else {
+		g.drawField(screen, area, time.Now())
+	}
+	g.drawStatus(screen, frame, frameW, frameH)
 
 	screen.Show()
+}
+
+// frameSize is the largest field, and so the picker's and every level's
+// common frame.
+func frameSize() (w, h int) {
+	w, h = pickerWidth, pickerRows
+	for _, l := range Levels {
+		if lw := l.Cols * cellWidth; lw > w {
+			w = lw
+		}
+		if l.Rows > h {
+			h = l.Rows
+		}
+	}
+	return w, h
 }
 
 // drawField paints every cell as it currently shows: a reveal or a planted
@@ -96,13 +131,12 @@ func (g *Game) drawField(screen tcell.Screen, origin boardOrigin, now time.Time)
 	}
 }
 
-func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
+func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, areaW, areaH int) {
 	statusStyle := tcell.StyleDefault.
 		Foreground(tcell.ColorWhite).
 		Background(tcell.ColorBlack)
 
-	boardW := g.level.Cols * cellWidth
-	centerX := origin.leftX + boardW/2
+	centerX := origin.leftX + areaW/2
 
 	pauseText := "PAUSED"
 	if g.pauseReason != "" {
@@ -113,7 +147,9 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	if g.store.Persistent() {
 		status += fmt.Sprintf("  BEST: %d", g.best)
 	}
-	status += fmt.Sprintf("  FLAGS: %d/%d  TIME: %s", g.flagCount, g.level.Mines, clock(g.runTime()))
+	if !g.choosing {
+		status += fmt.Sprintf("  FLAGS: %d/%d  TIME: %s", g.flagCount, g.level.Mines, clock(g.runTime()))
+	}
 	switch {
 	case g.paused:
 		status += " - " + pauseText
@@ -125,15 +161,51 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
 	emitStr(screen, centerX-len(status)/2, origin.topY-2, statusStyle, status)
 
 	hint := g.hint()
-	emitStr(screen, centerX-len([]rune(hint))/2, origin.topY+g.level.Rows+1, statusStyle, hint)
+	emitStr(screen, centerX-len([]rune(hint))/2, origin.topY+areaH+1, statusStyle, hint)
 
 	if g.paused {
-		g.band(screen, centerX-len(pauseText)/2, origin.topY+g.level.Rows/2, pauseText)
+		g.band(screen, centerX-len(pauseText)/2, origin.topY+areaH/2, pauseText)
 	} else if g.gameOver && !g.won {
 		overlay := "GAME OVER"
-		g.band(screen, centerX-len(overlay)/2, origin.topY+g.level.Rows/2, overlay)
+		g.band(screen, centerX-len(overlay)/2, origin.topY+areaH/2, overlay)
 	}
 }
+
+// pickerRows is the picker's height: a title, a blank line and the levels.
+const pickerRows = 2 + 3
+
+// drawPicker lists the levels with their best scores, the current one
+// highlighted.
+func (g *Game) drawPicker(screen tcell.Screen, origin boardOrigin) {
+	areaW, _ := g.areaSize()
+	title := tcell.StyleDefault.Foreground(tcell.ColorWhite).Bold(true)
+	plain := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+	highlight := tcell.StyleDefault.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack)
+
+	emitStr(screen, origin.leftX+(areaW-len("MINESWEEPER"))/2, origin.topY, title, "MINESWEEPER")
+	for i, l := range Levels {
+		line := fmt.Sprintf("  %-13s %2dx%-2d  %2d mines   best %d", l.Name, l.Cols, l.Rows, l.Mines, g.store.Best(l.scoreName))
+		style := plain
+		if l.Name == g.level.Name {
+			line = "▸" + line[1:]
+			style = highlight
+		}
+		line += strings.Repeat(" ", areaW-len([]rune(line)))
+		emitStr(screen, origin.leftX, origin.topY+2+i, style, line)
+	}
+}
+
+// areaSize is what Draw centres and hangs the status and hint lines on:
+// the picker or the field.
+func (g *Game) areaSize() (w, h int) {
+	if g.choosing {
+		return pickerWidth, pickerRows
+	}
+	return g.level.Cols * cellWidth, g.level.Rows
+}
+
+// pickerWidth fits the longest picker line with room for a best score.
+const pickerWidth = 44
 
 // clock formats a run time as m:ss.
 func clock(d time.Duration) string {
@@ -163,15 +235,21 @@ func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {
 }
 
 func (g *Game) hint() string {
-	return core.JoinHints("Enter: open", "F: flag", "1-3: level", g.keys.PauseHint(), g.keys.ResetHint("reset"), g.keys.LeaveHint())
+	if g.choosing {
+		return core.JoinHints("Up/Down: choose", "Enter: start", g.keys.PauseHint(), g.keys.LeaveHint())
+	}
+	return core.JoinHints("Enter: open", "F: flag", g.keys.PauseHint(), g.keys.ResetHint("levels"), g.keys.LeaveHint())
 }
 
-// NeededSize is the field with the status line two rows above it and the
-// hint line one row below (see drawStatus), as wide as the widest of them.
+// NeededSize is the largest field - the level is picked after the size is
+// asked for - with the status line two rows above it and the hint line one
+// row below (see drawStatus), as wide as the widest of them.
 func (g *Game) NeededSize() core.Size {
+	cols, rows := frameSize()
 	status := "INTERMEDIATE  SCORE: 99999  BEST: 99999  FLAGS: 99/99  TIME: 99:59 - GAME OVER"
+	fieldHint := core.JoinHints("Enter: open", "F: flag", g.keys.PauseHint(), g.keys.ResetHint("levels"), g.keys.LeaveHint())
 	return core.Size{
-		Cols: core.Widest(g.level.Cols*cellWidth, status, g.hint()),
-		Rows: g.level.Rows + 4,
+		Cols: core.Widest(cols, status, g.hint(), fieldHint),
+		Rows: rows + 4,
 	}
 }

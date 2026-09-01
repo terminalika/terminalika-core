@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/gdamore/tcell/v2"
 	core "github.com/terminalika/terminalika-core"
 )
 
@@ -172,9 +173,14 @@ func TestLifecycleCommandsEmitEvents(t *testing.T) {
 	g.Pause()
 	g.Resume()
 	g.Reset()
+	g.HandleInput(key(tcell.KeyEnter))
 
-	if len(r.events) != 3 || r.events[0].Type != evPaused || r.events[1].Type != evResumed || r.events[2].Type != evReset {
-		t.Fatalf("events = %v, want paused, resumed, reset", types(r.events))
+	if len(r.events) != 4 || r.events[0].Type != evPaused || r.events[1].Type != evResumed || r.events[2].Type != evReset || r.events[3].Type != evLevel {
+		t.Fatalf("events = %v, want paused, resumed, reset, level_changed", types(r.events))
+	}
+	var p levelPayload
+	if err := json.Unmarshal(r.events[3].Payload, &p); err != nil || p.Level != "beginner" || p.Mines != 10 {
+		t.Fatalf("level payload = %+v (err %v)", p, err)
 	}
 }
 
