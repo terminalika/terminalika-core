@@ -10,7 +10,7 @@ import (
 )
 
 func TestDefaultRegistryListsBuiltInGames(t *testing.T) {
-	want := []string{"2048", "snake", "tetris"}
+	want := []string{"2048", "mines", "snake", "tetris"}
 
 	got := Default().Names()
 	if len(got) != len(want) {

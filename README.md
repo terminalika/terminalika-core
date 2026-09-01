@@ -10,7 +10,7 @@ repo for the CLI launcher.
 - `core.Game` — the contract every game implements:
   `Init`, `Update`, `Draw`, `HandleInput`, `Pause`, `Resume`, `Reset`.
 - `core.Registry` — thread-safe registry of game factories by name.
-- `games.Default()` — built-in games: `2048`, `snake` and `tetris`.
+- `games.Default()` — built-in games: `2048`, `mines`, `snake` and `tetris`.
 - `highscore` — persists each game's best score to
   `scores.json` in the user config dir (`~/.config/terminalika/scores.json`
   on Linux, `~/Library/Application Support/terminalika/scores.json` on macOS,
