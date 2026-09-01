@@ -27,7 +27,21 @@ const (
 	// fourChance is the chance, out of a hundred, that a spawned tile is a 4
 	// rather than a 2.
 	fourChance = 10
+
+	// slideDuration is how long the tiles take to glide to their new cells
+	// after a move. The merged values and the spawned tile show up when it
+	// ends; a key pressed before that cuts it short and moves on.
+	slideDuration = 80 * time.Millisecond
 )
+
+// tileMove is one tile's trip during a slide: where it was, where it ends
+// up, and the value it carried on the way (merges show their result only
+// once the slide is over).
+type tileMove struct {
+	value        int
+	fromX, fromY int
+	toX, toY     int
+}
 
 // Command types.
 const (
@@ -67,6 +81,13 @@ type Game struct {
 	gameOver    bool
 	paused      bool
 	pauseReason string
+
+	// The slide in progress: the trips of every tile that was on the board
+	// before the move, where the spawned tile will appear, and when the
+	// slide started. Empty when nothing is moving.
+	sliding    []tileMove
+	spawned    tilePos
+	slideStart time.Time
 
 	rng   *rand.Rand
 	store *highscore.Store
@@ -166,13 +187,32 @@ func (g *Game) Reset() {
 	g.gameOver = false
 	g.paused = false
 	g.pauseReason = ""
+	g.sliding = nil
 	g.spawn()
 	g.spawn()
 	g.emit(evReset, nil)
 }
 
-// Update does nothing: the board has no clock of its own.
-func (g *Game) Update() {}
+// Update ends a finished slide. The board itself has no clock: nothing
+// here changes the game, only what Draw shows.
+func (g *Game) Update() {
+	if g.sliding != nil && time.Since(g.slideStart) >= slideDuration {
+		g.sliding = nil
+	}
+}
+
+// slideProgress is how far the current slide has come, 0 to 1; 1 when
+// nothing is sliding.
+func (g *Game) slideProgress() float64 {
+	if g.sliding == nil {
+		return 1
+	}
+	t := float64(time.Since(g.slideStart)) / float64(slideDuration)
+	if t >= 1 {
+		return 1
+	}
+	return t
+}
 
 // HandleInput handles the game-specific keys: arrows, WASD and HJKL slide
 // the board. SPACE, R and ESC are reserved for the launcher and are never
@@ -303,7 +343,7 @@ func (g *Game) Commands() []core.CommandSpec {
 // and it reports false. Otherwise a tile spawns, the score grows by the
 // merged values, and the run ends if the new board is stuck.
 func (g *Game) move(d direction) bool {
-	gained, moved := g.slide(d)
+	gained, moved, trips := g.slide(d)
 	if !moved {
 		return false
 	}
@@ -314,6 +354,9 @@ func (g *Game) move(d direction) bool {
 		g.store.Submit(gameName, g.score)
 	}
 	spawned := g.spawn()
+	g.sliding = trips
+	g.spawned = spawned
+	g.slideStart = time.Now()
 	g.emit(evMoved, movedPayload{Direction: dirName(d), Gained: gained, Score: g.score, Spawned: spawned})
 
 	if !g.won && g.largest() >= winTile {
@@ -327,19 +370,28 @@ func (g *Game) move(d direction) bool {
 	return true
 }
 
-// slide applies d to the board in place and reports the points merged and
-// whether anything changed.
-func (g *Game) slide(d direction) (gained int, moved bool) {
+// slide applies d to the board in place and reports the points merged,
+// whether anything changed, and every tile's trip - the ones that stayed
+// put included, so Draw can paint the whole pre-move board in motion.
+func (g *Game) slide(d direction) (gained int, moved bool, trips []tileMove) {
 	for i := 0; i < size; i++ {
 		line := g.line(d, i)
-		merged, points, changed := mergeLine(line)
+		merged, points, changed, dest := mergeLine(line)
 		if changed {
 			g.setLine(d, i, merged)
 			moved = true
 		}
 		gained += points
+		for j, v := range line {
+			if v == 0 {
+				continue
+			}
+			fx, fy := lineCell(d, i, j)
+			tx, ty := lineCell(d, i, dest[j])
+			trips = append(trips, tileMove{value: v, fromX: fx, fromY: fy, toX: tx, toY: ty})
+		}
 	}
-	return gained, moved
+	return gained, moved, trips
 }
 
 // line reads the i-th row or column in sliding order: its first element is
@@ -378,24 +430,28 @@ func lineCell(d direction, i, j int) (x, y int) {
 // mergeLine slides a line towards index 0: gaps close, then each pair of
 // equal neighbours becomes one tile of twice the value, once per tile and
 // nearest-the-edge first - 2 2 2 2 turns into 4 4, not 8, and 4 2 2 into
-// 4 4, not 8.
-func mergeLine(in [size]int) (out [size]int, points int, changed bool) {
+// 4 4, not 8. dest says where each input tile ended up (both halves of a
+// merge land on the same slot; empty inputs map to themselves).
+func mergeLine(in [size]int) (out [size]int, points int, changed bool, dest [size]int) {
 	var merged [size]bool
 	n := 0
-	for _, v := range in {
+	for j, v := range in {
 		if v == 0 {
+			dest[j] = j
 			continue
 		}
 		if n > 0 && out[n-1] == v && !merged[n-1] {
 			out[n-1] = v * 2
 			merged[n-1] = true
 			points += v * 2
+			dest[j] = n - 1
 			continue
 		}
 		out[n] = v
+		dest[j] = n
 		n++
 	}
-	return out, points, out != in
+	return out, points, out != in, dest
 }
 
 // spawn drops a 2 (or, one time in ten, a 4) into a random empty cell and

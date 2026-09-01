@@ -2,6 +2,7 @@ package g2048
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/gdamore/tcell/v2"
@@ -69,28 +70,55 @@ func (g *Game) Draw(screen tcell.Screen) {
 	screen.Show()
 }
 
+// drawTiles paints the board - or, while a slide is on, the pre-move tiles
+// part-way along their trips, with the merges and the spawned tile still
+// to come.
 func (g *Game) drawTiles(screen tcell.Screen, origin boardOrigin) {
+	t := g.slideProgress()
+	if t < 1 {
+		// Tiles heading for the same slot overlap at the end; painting
+		// the ones that travel further last keeps the mover on top.
+		for _, m := range g.sliding {
+			if m.fromX == m.toX && m.fromY == m.toY {
+				g.drawTile(screen, origin, m.value, float64(m.toX), float64(m.toY))
+			}
+		}
+		for _, m := range g.sliding {
+			if m.fromX == m.toX && m.fromY == m.toY {
+				continue
+			}
+			x := float64(m.fromX) + (float64(m.toX)-float64(m.fromX))*t
+			y := float64(m.fromY) + (float64(m.toY)-float64(m.fromY))*t
+			g.drawTile(screen, origin, m.value, x, y)
+		}
+		return
+	}
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			v := g.board[y][x]
-			if v == 0 {
-				continue // the terminal's own background shows through
+			if v := g.board[y][x]; v != 0 {
+				g.drawTile(screen, origin, v, float64(x), float64(y))
 			}
-			style := styleFor(v)
-			left := origin.leftX + x*tileW
-			top := origin.topY + y*tileH
-			for dy := 0; dy < tileH; dy++ {
-				for dx := 0; dx < tileW; dx++ {
-					screen.SetContent(left+dx, top+dy, ' ', nil, style)
-				}
-			}
-			label := strconv.Itoa(v)
-			if v >= winTile {
-				style = style.Bold(true)
-			}
-			emitStr(screen, left+(tileW-len(label))/2, top+tileH/2, style, label)
 		}
 	}
+}
+
+// drawTile paints one tile with its top-left corner at board coordinates
+// (x, y), which may fall between cells mid-slide. Empty cells are never
+// painted: the terminal's own background shows through.
+func (g *Game) drawTile(screen tcell.Screen, origin boardOrigin, v int, x, y float64) {
+	style := styleFor(v)
+	left := origin.leftX + int(math.Round(x*tileW))
+	top := origin.topY + int(math.Round(y*tileH))
+	for dy := 0; dy < tileH; dy++ {
+		for dx := 0; dx < tileW; dx++ {
+			screen.SetContent(left+dx, top+dy, ' ', nil, style)
+		}
+	}
+	label := strconv.Itoa(v)
+	if v >= winTile {
+		style = style.Bold(true)
+	}
+	emitStr(screen, left+(tileW-len(label))/2, top+tileH/2, style, label)
 }
 
 func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin) {
