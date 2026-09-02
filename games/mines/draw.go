@@ -50,7 +50,6 @@ var (
 // shrunk to what is actually drawn.
 func (g *Game) Draw(screen tcell.Screen) {
 	screen.Clear()
-	g.overlayOn = false
 
 	w, h := screen.Size()
 	areaW, areaH := g.areaSize()
@@ -82,8 +81,6 @@ func (g *Game) Draw(screen tcell.Screen) {
 		g.drawField(screen, area, time.Now())
 	}
 	g.drawStatus(screen, frame, frameW, frameH, hintLines)
-
-	screen.Show()
 }
 
 // frameSize is the largest field, and so the picker's and every level's
@@ -168,13 +165,6 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, areaW, areaH 
 	for i, line := range hintLines {
 		emitStr(screen, centerX-len([]rune(line))/2, origin.topY+areaH+1+i, statusStyle, line)
 	}
-
-	if g.paused {
-		g.band(screen, centerX-len(pauseText)/2, origin.topY+areaH/2, pauseText)
-	} else if g.gameOver && !g.won {
-		overlay := "GAME OVER"
-		g.band(screen, centerX-len(overlay)/2, origin.topY+areaH/2, overlay)
-	}
 }
 
 // pickerRows is the picker's height: a title, a blank line and the levels.
@@ -217,20 +207,6 @@ const pickerWidth = 44
 func clock(d time.Duration) string {
 	s := int(d.Seconds())
 	return fmt.Sprintf("%d:%02d", s/60, s%60)
-}
-
-// band paints the game's own overlay - white on dark red, one row - and
-// remembers where, for OverlayArea.
-func (g *Game) band(screen tcell.Screen, x, y int, text string) {
-	style := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkRed)
-	emitStr(screen, x, y, style, text)
-	g.overlay = core.Rect{X: x, Y: y, W: len(text), H: 1}
-	g.overlayOn = true
-}
-
-// OverlayArea reports the PAUSED / GAME OVER band the last Draw painted.
-func (g *Game) OverlayArea() (core.Rect, bool) {
-	return g.overlay, g.overlayOn
 }
 
 func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {

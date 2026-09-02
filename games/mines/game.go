@@ -123,13 +123,10 @@ type Game struct {
 	elapsed      time.Duration
 	runningSince time.Time
 
-	rng   *rand.Rand
-	store *highscore.Store
-	keys  core.GlobalKeys
-	// The PAUSED / GAME OVER band the last Draw painted, for OverlayArea.
-	overlay   core.Rect
-	overlayOn bool
-	emitter   core.Emitter
+	rng     *rand.Rand
+	store   *highscore.Store
+	keys    core.GlobalKeys
+	emitter core.Emitter
 }
 
 // Event payloads.

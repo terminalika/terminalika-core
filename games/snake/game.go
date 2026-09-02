@@ -76,12 +76,9 @@ type Game struct {
 	lastTick time.Time
 	period   time.Duration
 
-	store *highscore.Store
-	keys  core.GlobalKeys
-	// The PAUSED / GAME OVER band the last Draw painted, for OverlayArea.
-	overlay   core.Rect
-	overlayOn bool
-	emitter   core.Emitter
+	store   *highscore.Store
+	keys    core.GlobalKeys
+	emitter core.Emitter
 }
 
 // Event payloads.

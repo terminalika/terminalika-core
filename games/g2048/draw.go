@@ -56,7 +56,6 @@ func styleFor(value int) tcell.Style {
 // Draw renders the board, the tiles and the status bar.
 func (g *Game) Draw(screen tcell.Screen) {
 	screen.Clear()
-	g.overlayOn = false
 
 	w, h := screen.Size()
 	if w < boardW || h < boardH {
@@ -73,8 +72,6 @@ func (g *Game) Draw(screen tcell.Screen) {
 	g.drawBoard(screen, origin)
 	g.drawTiles(screen, origin)
 	g.drawStatus(screen, origin, hintLines)
-
-	screen.Show()
 }
 
 // drawBoard tints the board's rectangle; the tiles go on top of it.
@@ -166,27 +163,6 @@ func (g *Game) drawStatus(screen tcell.Screen, origin boardOrigin, hintLines []s
 	for i, line := range hintLines {
 		emitStr(screen, centerX-len(line)/2, origin.topY+boardH+1+i, statusStyle, line)
 	}
-
-	if g.paused {
-		g.band(screen, centerX-len(pauseText)/2, origin.topY+boardH/2, pauseText)
-	} else if g.gameOver {
-		overlay := "GAME OVER"
-		g.band(screen, centerX-len(overlay)/2, origin.topY+boardH/2, overlay)
-	}
-}
-
-// band paints the game's own overlay - white on dark red, one row - and
-// remembers where, for OverlayArea.
-func (g *Game) band(screen tcell.Screen, x, y int, text string) {
-	style := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkRed)
-	emitStr(screen, x, y, style, text)
-	g.overlay = core.Rect{X: x, Y: y, W: len(text), H: 1}
-	g.overlayOn = true
-}
-
-// OverlayArea reports the PAUSED / GAME OVER band the last Draw painted.
-func (g *Game) OverlayArea() (core.Rect, bool) {
-	return g.overlay, g.overlayOn
 }
 
 func emitStr(screen tcell.Screen, x, y int, style tcell.Style, str string) {

@@ -159,6 +159,7 @@ func TestDrawMidSlideShowsTilesOnTheWay(t *testing.T) {
 	// yet, so exactly one tile's worth of cells is painted.
 	g.slideStart = time.Now().Add(-slideDuration / 2)
 	g.Draw(screen)
+	screen.Show()
 	if got := paintedBoardCells(screen); got != tileW*tileH {
 		t.Fatalf("%d cells painted mid-slide, want one tile (%d): the spawn must wait", got, tileW*tileH)
 	}
@@ -167,6 +168,7 @@ func TestDrawMidSlideShowsTilesOnTheWay(t *testing.T) {
 	g.slideStart = time.Now().Add(-2 * slideDuration)
 	g.Update()
 	g.Draw(screen)
+	screen.Show()
 	if got := paintedBoardCells(screen); got != 2*tileW*tileH {
 		t.Fatalf("%d cells painted after the slide, want two tiles (%d)", got, 2*tileW*tileH)
 	}
